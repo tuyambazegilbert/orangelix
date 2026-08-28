@@ -65,4 +65,21 @@ export class AuthService {
   static logout(): void {
     this.setCurrentUser(null);
   }
+
+  static async resetPassword(email: string): Promise<boolean> {
+    const users = this.getUsers();
+    const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      // For security, don't leak user existence, but acknowledge
+      return true;
+    }
+    return true;
+  }
+
+  static async confirmPasswordReset(oobCode: string, newPassword: string): Promise<boolean> {
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters');
+    }
+    return true;
+  }
 }

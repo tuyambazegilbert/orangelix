@@ -11,6 +11,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Movies from './pages/Movies';
 import Series from './pages/Series';
 import Watch from './pages/Watch';
@@ -50,6 +51,8 @@ const App = () => (
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
                   <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route path="/auth/action" element={<ResetPassword />} />
                   <Route path="/movies" element={<Movies />} />
                   <Route path="/series" element={<Series />} />
                   <Route path="/movie/:id" element={<MovieDetail />} />

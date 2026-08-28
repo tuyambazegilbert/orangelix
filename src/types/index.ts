@@ -61,8 +61,14 @@ export interface AuthContextType {
   currentUser: User | null;
   login: (email: string, password: string) => Promise<User | null>;
   loginWithGoogle: () => Promise<User | null>;
+  loginWithGoogleOneTap: (idToken: string) => Promise<User | null>;
   register: (email: string, password: string, name: string) => Promise<User | null>;
   logout: () => void;
   resetPassword: (email: string) => Promise<boolean>;
+  confirmPasswordReset: (oobCode: string, newPassword: string) => Promise<boolean>;
+  pendingLinkEmail: string | null;
+  isLinkingAccount: boolean;
+  linkAccountWithPassword: (password: string) => Promise<User | null>;
+  cancelAccountLinking: () => void;
   isLoading: boolean;
 }

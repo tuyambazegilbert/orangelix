@@ -1,14 +1,17 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
+  AuthCredential,
+  confirmPasswordReset as fbConfirmPasswordReset,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  linkWithCredential,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile,
-  User as FirebaseUser,
 } from 'firebase/auth';
 import { AuthContextType, User } from '@/types';
 import { AuthService } from '@/lib/auth';
@@ -16,16 +19,6 @@ import { firebaseAuth, firebaseEnabled } from '@/lib/firebase';
 import { FirebaseData } from '@/lib/firebase-data';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const mapFirebaseUser = (user: FirebaseUser, isAdmin = false): User => ({
-  id: user.uid,
-  email: user.email || '',
-  name: user.displayName || user.email?.split('@')[0] || 'OrangeFlix member',
-  isAdmin,
-  role: isAdmin ? 'admin' : 'member',
-  createdAt: user.metadata.creationTime || new Date().toISOString(),
-  lastLoginAt: new Date().toISOString(),
-});
 
 export function useAuth() {
   const context = useContext(AuthContext);
@@ -37,28 +30,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Account linking state (for auth/account-exists-with-different-credential)
+  const [pendingCredential, setPendingCredential] = useState<AuthCredential | null>(null);
+  const [pendingLinkEmail, setPendingLinkEmail] = useState<string | null>(null);
+  const [isLinkingAccount, setIsLinkingAccount] = useState(false);
+
   useEffect(() => {
     if (firebaseEnabled && firebaseAuth) {
-      return onAuthStateChanged(firebaseAuth, async (fbUser) => {
+      const unsubscribe = onAuthStateChanged(firebaseAuth, async (fbUser) => {
         if (!fbUser) {
           setCurrentUser(null);
           setIsLoading(false);
           return;
         }
 
-        // Fetch Firestore user document to check isAdmin status
-        const cloudProfile = await FirebaseData.getUserProfile(fbUser.uid);
-        const resolvedUser = mapFirebaseUser(fbUser, cloudProfile?.isAdmin || false);
-        if (cloudProfile?.name) {
-          resolvedUser.name = cloudProfile.name;
+        try {
+          // Canonical UID identity lookup & metadata touch
+          const resolvedUser = await FirebaseData.ensureUserProfile(fbUser);
+          setCurrentUser(resolvedUser);
+        } catch (err) {
+          console.error('[Auth] Failed to sync user profile:', err);
+        } finally {
+          setIsLoading(false);
         }
-
-        setCurrentUser(resolvedUser);
-        setIsLoading(false);
       });
+      return () => unsubscribe();
     }
 
-    // Local authentication fallback
+    // Local authentication fallback for dev environments
     setCurrentUser(AuthService.getCurrentUser());
     setIsLoading(false);
     return undefined;
@@ -68,11 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (firebaseEnabled && firebaseAuth) {
         const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
-        const cloudProfile = await FirebaseData.getUserProfile(credential.user.uid);
-        const user = mapFirebaseUser(credential.user, cloudProfile?.isAdmin || false);
-        if (cloudProfile?.name) user.name = cloudProfile.name;
-
-        await FirebaseData.saveProfile(user.id, user);
+        const user = await FirebaseData.ensureUserProfile(credential.user);
         setCurrentUser(user);
         return user;
       }
@@ -85,24 +80,131 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return localUser;
       }
       return null;
-    } catch {
-      return null;
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      console.error('[Auth Login Error]', error.code, error.message);
+      throw err;
     }
   };
 
   const loginWithGoogle = async (): Promise<User | null> => {
-    if (!firebaseEnabled || !firebaseAuth) return null;
-    try {
-      const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
-      const cloudProfile = await FirebaseData.getUserProfile(credential.user.uid);
-      const user = mapFirebaseUser(credential.user, cloudProfile?.isAdmin || false);
+    if (!firebaseEnabled || !firebaseAuth) {
+      // Local fallback
+      const localUser: User = {
+        id: 'google-local-dev-user',
+        email: 'google.user@example.com',
+        name: 'Google Member',
+        isAdmin: false,
+        role: 'member',
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+      };
+      setCurrentUser(localUser);
+      return localUser;
+    }
 
-      await FirebaseData.saveProfile(user.id, user);
+    const provider = new GoogleAuthProvider();
+    provider.addScope('email');
+    provider.addScope('profile');
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    try {
+      const credential = await signInWithPopup(firebaseAuth, provider);
+      const user = await FirebaseData.ensureUserProfile(credential.user);
       setCurrentUser(user);
       return user;
-    } catch {
+    } catch (err: unknown) {
+      const error = err as {
+        code?: string;
+        message?: string;
+        customData?: { email?: string };
+        email?: string;
+      };
+      console.error('[Auth Google Error]', error.code, error.message);
+
+      // Handle account exists with different credential
+      if (error.code === 'auth/account-exists-with-different-credential') {
+        const pendingCred = GoogleAuthProvider.credentialFromError(err as Parameters<typeof GoogleAuthProvider.credentialFromError>[0]);
+        const email = error.customData?.email || error.email;
+
+        if (pendingCred && email) {
+          setPendingCredential(pendingCred);
+          setPendingLinkEmail(email);
+          setIsLinkingAccount(true);
+        }
+      }
+
+      throw err;
+    }
+  };
+
+  const loginWithGoogleOneTap = async (idToken: string): Promise<User | null> => {
+    if (!firebaseEnabled || !firebaseAuth) return null;
+
+    try {
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(firebaseAuth, credential);
+      const user = await FirebaseData.ensureUserProfile(userCredential.user);
+      setCurrentUser(user);
+      return user;
+    } catch (err: unknown) {
+      const error = err as {
+        code?: string;
+        message?: string;
+        customData?: { email?: string };
+        email?: string;
+      };
+      console.error('[Auth OneTap Error]', error.code, error.message);
+
+      if (error.code === 'auth/account-exists-with-different-credential') {
+        const pendingCred = GoogleAuthProvider.credential(idToken);
+        const email = error.customData?.email || error.email;
+        if (email) {
+          setPendingCredential(pendingCred);
+          setPendingLinkEmail(email);
+          setIsLinkingAccount(true);
+        }
+      }
+
+      throw err;
+    }
+  };
+
+  const linkAccountWithPassword = async (password: string): Promise<User | null> => {
+    if (!firebaseEnabled || !firebaseAuth || !pendingLinkEmail || !pendingCredential) {
       return null;
     }
+
+    try {
+      // 1. Sign in with the existing password provider to obtain the canonical Firebase user
+      const userCredential = await signInWithEmailAndPassword(
+        firebaseAuth,
+        pendingLinkEmail,
+        password
+      );
+
+      // 2. Link the pending Google credential to this exact canonical user
+      await linkWithCredential(userCredential.user, pendingCredential);
+
+      // 3. Ensure user profile and cleanup state
+      const unifiedUser = await FirebaseData.ensureUserProfile(userCredential.user);
+      setPendingCredential(null);
+      setPendingLinkEmail(null);
+      setIsLinkingAccount(false);
+      setCurrentUser(unifiedUser);
+
+      return unifiedUser;
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      console.error('[Auth Linking Error]', error.code, error.message);
+      throw err;
+    }
+  };
+
+  const cancelAccountLinking = () => {
+    setPendingCredential(null);
+    setPendingLinkEmail(null);
+    setIsLinkingAccount(false);
   };
 
   const register = async (email: string, password: string, name: string): Promise<User | null> => {
@@ -110,11 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseEnabled && firebaseAuth) {
         const credential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
         await updateProfile(credential.user, { displayName: name });
-        const user: User = {
-          ...mapFirebaseUser(credential.user, false),
-          name,
-        };
-        await FirebaseData.saveProfile(user.id, user);
+        const user = await FirebaseData.ensureUserProfile(credential.user, { name });
         setCurrentUser(user);
         return user;
       }
@@ -127,8 +225,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return localUser;
       }
       return null;
-    } catch {
-      return null;
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      console.error('[Auth Register Error]', error.code, error.message);
+      throw err;
     }
   };
 
@@ -142,11 +242,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string): Promise<boolean> => {
-    if (!firebaseEnabled || !firebaseAuth) return false;
     try {
-      await sendPasswordResetEmail(firebaseAuth, email);
-      return true;
-    } catch {
+      if (firebaseEnabled && firebaseAuth) {
+        await sendPasswordResetEmail(firebaseAuth, email);
+        return true;
+      }
+      return await AuthService.resetPassword(email);
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      console.error('[Auth Reset Password Error]', error.code, error.message);
+      return false;
+    }
+  };
+
+  const confirmPasswordReset = async (oobCode: string, newPassword: string): Promise<boolean> => {
+    try {
+      if (firebaseEnabled && firebaseAuth) {
+        await fbConfirmPasswordReset(firebaseAuth, oobCode, newPassword);
+        return true;
+      }
+      return await AuthService.confirmPasswordReset(oobCode, newPassword);
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      console.error('[Auth Confirm Password Reset Error]', error.code, error.message);
       return false;
     }
   };
@@ -157,9 +275,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentUser,
         login,
         loginWithGoogle,
+        loginWithGoogleOneTap,
         register,
         logout,
         resetPassword,
+        confirmPasswordReset,
+        pendingLinkEmail,
+        isLinkingAccount,
+        linkAccountWithPassword,
+        cancelAccountLinking,
         isLoading,
       }}
     >

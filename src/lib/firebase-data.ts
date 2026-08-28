@@ -52,8 +52,102 @@ export interface AdminActivity {
 /** Global Cloud Database Service powered by Firebase Firestore */
 export const FirebaseData = {
   // -------------------------------------------------------------
-  // USERS & PROFILES
+  // USERS & PROFILES (Idempotent Canonical UID Provisioning)
   // -------------------------------------------------------------
+  async ensureUserProfile(
+    user: {
+      uid: string;
+      email?: string | null;
+      displayName?: string | null;
+      photoURL?: string | null;
+      metadata?: { creationTime?: string };
+    },
+    extra?: { name?: string; isAdmin?: boolean }
+  ): Promise<User> {
+    const defaultUser: User = {
+      id: user.uid,
+      email: user.email || '',
+      name: extra?.name || user.displayName || user.email?.split('@')[0] || 'OrangeFlix Member',
+      isAdmin: extra?.isAdmin ?? (user.email?.toLowerCase() === 'admin@orangeflix.com'),
+      role: (extra?.isAdmin ?? (user.email?.toLowerCase() === 'admin@orangeflix.com')) ? 'admin' : 'member',
+      photoURL: user.photoURL || '',
+      status: 'active',
+      createdAt: user.metadata?.creationTime || new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    };
+
+    if (!firestore) return defaultUser;
+
+    try {
+      const userRef = doc(firestore, 'users', user.uid);
+      const existing = await getDoc(userRef);
+
+      if (existing.exists()) {
+        const d = existing.data();
+        const isAdmin = extra?.isAdmin ?? d.isAdmin ?? defaultUser.isAdmin;
+        const role = isAdmin ? 'admin' : (d.role || 'member');
+        const resolvedName = d.name || extra?.name || user.displayName || defaultUser.name;
+        const resolvedPhoto = d.photoURL || user.photoURL || '';
+
+        // Safe update: metadata only, never overwrite user data
+        await setDoc(
+          userRef,
+          {
+            email: user.email || d.email || '',
+            name: resolvedName,
+            photoURL: resolvedPhoto,
+            lastLoginAt: new Date().toISOString(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        // Also update public profile
+        await setDoc(
+          doc(firestore, 'profiles', user.uid),
+          {
+            userId: user.uid,
+            displayName: resolvedName,
+            avatarUrl: resolvedPhoto,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        return {
+          id: user.uid,
+          email: user.email || d.email || '',
+          name: resolvedName,
+          isAdmin,
+          role,
+          photoURL: resolvedPhoto,
+          status: d.status || 'active',
+          createdAt: d.createdAt || defaultUser.createdAt,
+          lastLoginAt: new Date().toISOString(),
+        };
+      }
+
+      // Initial user profile creation
+      await setDoc(userRef, {
+        ...defaultUser,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Initial public profile
+      await setDoc(doc(firestore, 'profiles', user.uid), {
+        userId: user.uid,
+        displayName: defaultUser.name,
+        avatarUrl: defaultUser.photoURL,
+        updatedAt: serverTimestamp(),
+      });
+
+      return defaultUser;
+    } catch (err) {
+      console.warn('Firestore ensureUserProfile error:', err);
+      return defaultUser;
+    }
+  },
+
   async saveProfile(userId: string, input: Partial<User>) {
     if (!firestore) return;
     try {
