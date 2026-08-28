@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { FormEvent, useState, useEffect, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useSearchMulti } from '@/hooks/use-tmdb';
 import { NewsApi, NewsArticle } from '@/services/news-api';
@@ -24,9 +24,10 @@ import {
 
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') || '';
-  const [query, setQuery] = useState(initialQuery);
-  const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
+  const urlQuery = searchParams.get('q')?.trim() || '';
+  const [query, setQuery] = useState(urlQuery);
+  const [debouncedQuery, setDebouncedQuery] = useState(urlQuery);
+  const previousUrlQuery = useRef(urlQuery);
   const [activeTab, setActiveTab] = useState<'all' | 'movies' | 'tv' | 'news' | 'music'>('all');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -34,7 +35,17 @@ export default function Search() {
   const [newsResults, setNewsResults] = useState<NewsArticle[]>([]);
   const [musicResults, setMusicResults] = useState<SoundtrackTrack[]>([]);
 
-  // Sync debounced query
+  // A header search can navigate to this same route with a different `q` value.
+  // Keep the mounted page in sync with the URL before its local debounce runs.
+  useEffect(() => {
+    if (previousUrlQuery.current === urlQuery) return;
+    previousUrlQuery.current = urlQuery;
+    setQuery(urlQuery);
+    setDebouncedQuery(urlQuery);
+    setCurrentPage(1);
+  }, [urlQuery]);
+
+  // Update the address and results after the user pauses typing in this page's input.
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedQuery(query);
@@ -60,8 +71,14 @@ export default function Search() {
       return;
     }
 
-    NewsApi.searchArticles(debouncedQuery).then(setNewsResults);
-    MusicApi.searchMovieSoundtrack(debouncedQuery).then((res) => setMusicResults(res.tracks));
+    let current = true;
+    void NewsApi.searchArticles(debouncedQuery).then((results) => {
+      if (current) setNewsResults(results);
+    });
+    void MusicApi.searchMovieSoundtrack(debouncedQuery).then((res) => {
+      if (current) setMusicResults(res.tracks);
+    });
+    return () => { current = false; };
   }, [debouncedQuery]);
 
   const rawItems = searchData?.items || [];
@@ -69,6 +86,13 @@ export default function Search() {
   const tvItems = rawItems.filter((i) => i.mediaType === 'tv');
 
   const totalPages = Math.min(searchData?.totalPages || 1, 500);
+  const submitSearch = (event: FormEvent) => {
+    event.preventDefault();
+    const nextQuery = query.trim();
+    setDebouncedQuery(nextQuery);
+    setSearchParams(nextQuery ? { q: nextQuery } : {}, { replace: true });
+    setCurrentPage(1);
+  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -92,7 +116,7 @@ export default function Search() {
             Search <span className="text-orange-400">OrangeFlix</span>
           </h1>
 
-          <div className="relative max-w-2xl">
+          <form onSubmit={submitSearch} className="relative max-w-2xl">
             <SearchIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 text-orange-400 w-5 h-5" />
             <Input
               type="text"
@@ -101,7 +125,7 @@ export default function Search() {
               onChange={(e) => setQuery(e.target.value)}
               className="pl-12 py-6 text-base bg-gray-900 border-gray-700 text-white placeholder-gray-500 rounded-2xl focus:border-orange-500 focus:ring-orange-500/20"
             />
-          </div>
+          </form>
         </div>
 
         {/* Multi-Entity Tab Bar */}

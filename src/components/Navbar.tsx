@@ -1,5 +1,5 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { FormEvent, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { FormEvent, useEffect, useState } from 'react';
 import {
   Bell,
   Bookmark,
@@ -23,26 +23,40 @@ const primaryLinks = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/movies', label: 'Movies', icon: Compass },
   { to: '/series', label: 'TV Shows', icon: Tv },
-  { to: '/movie-night', label: 'Tonight', icon: Moon },
-  { to: '/news', label: 'News', icon: Newspaper },
-  { to: '/music', label: 'Soundtracks', icon: Music2 },
-  { to: '/favorites', label: 'Watchlist', icon: Bookmark },
+  { to: '/trending', label: 'Trending', icon: Sparkles },
+  { to: '/new', label: 'New Releases', icon: Moon },
+  { to: '/favorites', label: 'My List', icon: Bookmark },
 ];
 
 export default function Navbar() {
   const { currentUser, logout, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const update = () => setScrolled(window.scrollY > 12);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, []);
+
+  useEffect(() => {
+    if (location.pathname !== '/search') return;
+    setQuery(new URLSearchParams(location.search).get('q') || '');
+  }, [location.pathname, location.search]);
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
-    if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`);
+    const nextQuery = query.trim();
+    navigate(nextQuery ? `/search?q=${encodeURIComponent(nextQuery)}` : '/search');
   };
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-white/[.07] bg-[#080d17]/85 backdrop-blur-xl">
+      <header className={`sticky top-0 z-50 transition-colors duration-300 ${scrolled ? 'border-b border-white/[.08] bg-[#080d17]/90 shadow-[0_8px_26px_rgba(0,0,0,.22)] backdrop-blur-xl' : 'border-b border-white/[.04] bg-[#080d17]/62 backdrop-blur-md'}`}>
         <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-5 px-4 sm:px-7">
           <Link to="/" className="flex shrink-0 items-center gap-2.5" aria-label="OrangeFlix home">
             <img
