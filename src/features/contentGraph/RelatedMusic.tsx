@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { SoundtrackItem } from '@/services/music-api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,14 @@ interface RelatedMusicProps {
 export default function RelatedMusic({ soundtrack, tmdbId, isLoading }: RelatedMusicProps) {
   const [playingTrackId, setPlayingTrackId] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    // Reset playing state if soundtrack changes
+    setPlayingTrackId(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+  }, [soundtrack]);
 
   const togglePreview = (trackId: number, previewUrl?: string) => {
     if (!previewUrl) return;
@@ -42,18 +50,9 @@ export default function RelatedMusic({ soundtrack, tmdbId, isLoading }: RelatedM
     );
   }
 
+  // Gracefully omit if no authentic soundtrack release was found
   if (!soundtrack || !soundtrack.tracks || soundtrack.tracks.length === 0) {
-    return (
-      <div className="space-y-3">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          <Music2 className="w-5 h-5 text-orange-400" />
-          Motion Picture Soundtrack
-        </h2>
-        <div className="rounded-2xl border border-gray-800/80 bg-gray-900/30 p-6 text-center text-xs text-gray-400">
-          No official soundtrack tracklist available for this title yet.
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -61,12 +60,18 @@ export default function RelatedMusic({ soundtrack, tmdbId, isLoading }: RelatedM
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <Music2 className="w-5 h-5 text-orange-400" />
-          Original Motion Picture Soundtrack
+          Motion Picture Soundtrack & Official Score
         </h2>
-        {tmdbId && (
+        {tmdbId ? (
           <Button asChild variant="ghost" size="sm" className="text-xs text-orange-400 hover:text-orange-300">
             <Link to={`/music/movie/${tmdbId}`}>
               View Full Album <ExternalLink className="w-3 h-3 ml-1" />
+            </Link>
+          </Button>
+        ) : (
+          <Button asChild variant="ghost" size="sm" className="text-xs text-orange-400 hover:text-orange-300">
+            <Link to="/music">
+              Explore Music Hub <ExternalLink className="w-3 h-3 ml-1" />
             </Link>
           </Button>
         )}
@@ -99,7 +104,7 @@ export default function RelatedMusic({ soundtrack, tmdbId, isLoading }: RelatedM
               </div>
             </div>
 
-            {tmdbId && (
+            {tmdbId ? (
               <Button
                 asChild
                 size="sm"
@@ -110,47 +115,62 @@ export default function RelatedMusic({ soundtrack, tmdbId, isLoading }: RelatedM
                   Listen All ({soundtrack.trackCount} Tracks)
                 </Link>
               </Button>
+            ) : (
+              <Button
+                asChild
+                size="sm"
+                className="bg-orange-500/10 border border-orange-500/30 hover:bg-orange-500/20 text-orange-300 text-xs font-semibold shrink-0"
+              >
+                <Link to="/music">
+                  <Volume2 className="w-3.5 h-3.5 mr-1 text-orange-400" />
+                  Listen In Music Hub
+                </Link>
+              </Button>
             )}
           </div>
 
-          {/* Top 3 Audio Sample Previews */}
-          <div className="mt-5 space-y-2 border-t border-gray-800/80 pt-4">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
-              Featured Audio Samples (30s Preview)
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-              {soundtrack.tracks.slice(0, 3).map((track) => {
-                const isPlaying = playingTrackId === track.id;
-                return (
-                  <div
-                    key={track.id}
-                    className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
-                      isPlaying
-                        ? 'bg-orange-500/10 border-orange-500/40 text-orange-300'
-                        : 'bg-gray-950/60 border-gray-800 hover:border-gray-700 text-gray-300'
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1 pr-2">
-                      <p className="text-xs font-medium text-white truncate">{track.trackName}</p>
-                      <p className="text-[11px] text-gray-400 truncate">{track.artistName}</p>
-                    </div>
-
-                    <button
-                      onClick={() => togglePreview(track.id, track.previewUrl)}
-                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${
+          {/* Audio Sample Previews */}
+          {soundtrack.tracks && soundtrack.tracks.length > 0 && (
+            <div className="mt-5 space-y-2 border-t border-gray-800/80 pt-4">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                Featured Track Samples (30s Audio Preview)
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                {soundtrack.tracks.slice(0, 3).map((track) => {
+                  const isPlaying = playingTrackId === track.id;
+                  return (
+                    <div
+                      key={track.id}
+                      className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
                         isPlaying
-                          ? 'bg-orange-500 text-white shadow-md shadow-orange-500/40'
-                          : 'bg-white/10 text-white hover:bg-orange-500 hover:text-white'
+                          ? 'bg-orange-500/10 border-orange-500/40 text-orange-300'
+                          : 'bg-gray-950/60 border-gray-800 hover:border-gray-700 text-gray-300'
                       }`}
-                      aria-label={isPlaying ? 'Pause sample' : 'Play 30s sample'}
                     >
-                      {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
-                    </button>
-                  </div>
-                );
-              })}
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="text-xs font-medium text-white truncate">{track.trackName}</p>
+                        <p className="text-[11px] text-gray-400 truncate">{track.artistName}</p>
+                      </div>
+
+                      {track.previewUrl && (
+                        <button
+                          onClick={() => togglePreview(track.id, track.previewUrl)}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0 ${
+                            isPlaying
+                              ? 'bg-orange-500 text-white shadow-md shadow-orange-500/40'
+                              : 'bg-white/10 text-white hover:bg-orange-500 hover:text-white'
+                          }`}
+                          aria-label={isPlaying ? 'Pause sample' : 'Play 30s sample'}
+                        >
+                          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>
