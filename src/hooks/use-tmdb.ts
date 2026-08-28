@@ -457,3 +457,73 @@ export function useHydratedItem(mediaType: MediaType, tmdbId: number) {
   });
 }
 
+export interface TMDBPersonFull {
+  id: number;
+  name: string;
+  biography: string;
+  birthday?: string;
+  placeOfBirth?: string;
+  profilePath?: string;
+  knownForDepartment: string;
+  popularity: number;
+  credits: {
+    cast: MediaItem[];
+    crew: MediaItem[];
+  };
+}
+
+export function usePersonDetails(personId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['tmdb', 'person', personId],
+    queryFn: async (): Promise<TMDBPersonFull> => {
+      if (!personId) throw new Error('Person ID required');
+      const [person, credits] = await Promise.all([
+        tmdbClient.get<Record<string, unknown>>(tmdbEndpoints.personDetails(personId)),
+        tmdbClient.get<Record<string, unknown>>(tmdbEndpoints.personCredits(personId)).catch(() => ({ cast: [], crew: [] })),
+      ]);
+
+      const castList = (Array.isArray(credits.cast) ? credits.cast : []) as Array<Record<string, unknown>>;
+      const crewList = (Array.isArray(credits.crew) ? credits.crew : []) as Array<Record<string, unknown>>;
+
+      const mapCredit = (c: Record<string, unknown>): MediaItem => {
+        const isTv = c.media_type === 'tv';
+        const title = String(c.title || c.name || 'Untitled');
+        const posterPath = c.poster_path ? String(c.poster_path) : undefined;
+        return {
+          id: `${isTv ? 'tv' : 'movie'}-${c.id}`,
+          tmdbId: Number(c.id),
+          mediaType: isTv ? 'tv' : 'movie',
+          title,
+          overview: String(c.overview || ''),
+          posterUrl: posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : undefined,
+          backdropUrl: c.backdrop_path ? `https://image.tmdb.org/t/p/w1280${c.backdrop_path}` : undefined,
+          releaseYear: c.release_date || c.first_air_date ? new Date(String(c.release_date || c.first_air_date)).getFullYear() : undefined,
+          voteAverage: Number(c.vote_average || 0),
+          voteCount: Number(c.vote_count || 0),
+          popularity: Number(c.popularity || 0),
+          genres: [],
+          genreIds: Array.isArray(c.genre_ids) ? (c.genre_ids as number[]) : [],
+          originalLanguage: String(c.original_language || 'en'),
+        };
+      };
+
+      return {
+        id: Number(person.id),
+        name: String(person.name || 'Artist'),
+        biography: String(person.biography || 'No biography available for this talent.'),
+        birthday: person.birthday ? String(person.birthday) : undefined,
+        placeOfBirth: person.place_of_birth ? String(person.place_of_birth) : undefined,
+        profilePath: person.profile_path ? `https://image.tmdb.org/t/p/w500${person.profile_path}` : undefined,
+        knownForDepartment: String(person.known_for_department || 'Acting'),
+        popularity: Number(person.popularity || 0),
+        credits: {
+          cast: castList.map(mapCredit),
+          crew: crewList.map(mapCredit),
+        },
+      };
+    },
+    enabled: Boolean(personId && personId > 0),
+    staleTime: DEFAULT_STALE_TIME,
+  });
+}
+

@@ -9,7 +9,7 @@ import { MediaItem } from '@/types/media';
 import { Movie } from '@/types';
 
 export default function Favorites() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading } = useAuth();
   const [favoriteList, setFavoriteList] = useState<(MediaItem | Movie)[]>([]);
 
   const loadFavorites = () => {
@@ -34,8 +34,23 @@ export default function Favorites() {
   };
 
   useEffect(() => {
-    loadFavorites();
+    if (currentUser) {
+      loadFavorites();
+    }
   }, [currentUser]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white page-wrap py-12">
+        <div className="h-8 w-48 bg-white/[.08] rounded animate-pulse mb-8" />
+        <div className="content-grid">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="aspect-[2/3] rounded-xl bg-white/[.05] animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return <Navigate to="/login" replace />;

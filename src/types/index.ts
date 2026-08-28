@@ -1,13 +1,81 @@
+export interface UserPreferences {
+  theme: 'dark' | 'light' | 'system';
+  language: string;
+  favoriteGenres: string[];
+  autoplayNext: boolean;
+  autoplayPreviews: boolean;
+  defaultQuality: 'auto' | '1080p' | '720p' | '4k';
+  subtitles: 'on' | 'off' | 'auto';
+  skipIntro: boolean;
+  continueWatching: boolean;
+  notifications: {
+    newReleases: boolean;
+    recommendations: boolean;
+    securityAlerts: boolean;
+  };
+  privacy: {
+    profileVisibility: 'public' | 'private';
+    historyVisibility: 'private' | 'friends';
+    personalizedAds: boolean;
+  };
+}
+
 export interface User {
   id: string;
   email: string;
   name: string;
+  username?: string;
+  bio?: string;
   isAdmin: boolean;
   role?: 'admin' | 'member';
   createdAt: string;
   lastLoginAt?: string;
   photoURL?: string;
   status?: 'active' | 'suspended';
+  preferences?: Partial<UserPreferences>;
+}
+
+export interface WatchHistoryItem {
+  contentId: string;
+  tmdbId?: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  posterUrl?: string;
+  progressSeconds: number;
+  durationSeconds?: number;
+  genre?: string[];
+  watchedAt: string;
+}
+
+export interface UserRating {
+  movieId: string;
+  mediaTitle: string;
+  rating: number; // 1 to 5
+  posterUrl?: string;
+  mediaType?: 'movie' | 'tv';
+  ratedAt: string;
+}
+
+export interface UserStats {
+  moviesWatched: number;
+  seriesWatched: number;
+  totalHoursWatched: number;
+  favoriteGenre: string;
+  streakDays: number;
+  totalFavorites: number;
+  totalWatchLater: number;
+  totalRatings: number;
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  progress: number;
+  maxProgress: number;
+  unlockedAt?: string;
 }
 
 export interface Movie {

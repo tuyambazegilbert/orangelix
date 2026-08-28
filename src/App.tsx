@@ -7,6 +7,8 @@ import { ThemeProvider } from '@/hooks/use-theme';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import ScrollToTop from '@/components/ScrollToTop';
+
+// Primary Pages
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -26,6 +28,19 @@ import MovieDetail from './pages/MovieDetail';
 import SeriesDetail from './pages/SeriesDetail';
 import NotFound from './pages/NotFound';
 
+// New Discovery Hubs & SEO Pages
+import MovieNight from './pages/MovieNight';
+import News from './pages/News';
+import NewsDetail from './pages/NewsDetail';
+import Music from './pages/Music';
+import MovieSoundtrack from './pages/MovieSoundtrack';
+import Books from './pages/Books';
+import PeopleDetail from './pages/PeopleDetail';
+import Genres from './pages/Genres';
+import Collections from './pages/Collections';
+import PublicProfile from './pages/PublicProfile';
+import WeatherAssistant from '@/components/weather/WeatherAssistant';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -41,12 +56,13 @@ const App = () => (
       <TooltipProvider>
         <AuthProvider>
           <Toaster />
-          <BrowserRouter>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <div className="app-shell flex min-h-screen flex-col">
               <ScrollToTop />
               <Navbar />
               <main className="flex-1">
                 <Routes>
+                  {/* Core Platform */}
                   <Route path="/" element={<Home />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
@@ -60,14 +76,31 @@ const App = () => (
                   <Route path="/trending" element={<Trending />} />
                   <Route path="/new" element={<New />} />
                   <Route path="/watch/:id" element={<Watch />} />
-                  <Route path="/admin" element={<Admin />} />
                   <Route path="/favorites" element={<Favorites />} />
                   <Route path="/watchlater" element={<WatchLater />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/search" element={<Search />} />
+                  <Route path="/admin" element={<Admin />} />
+
+                  {/* Discovery Hubs */}
+                  <Route path="/movie-night" element={<MovieNight />} />
+                  <Route path="/tonight" element={<MovieNight />} />
+                  <Route path="/news" element={<News />} />
+                  <Route path="/news/:slug" element={<NewsDetail />} />
+                  <Route path="/news/category/:category" element={<News />} />
+                  <Route path="/music" element={<Music />} />
+                  <Route path="/music/movie/:id" element={<MovieSoundtrack />} />
+                  <Route path="/books" element={<Books />} />
+                  <Route path="/people/:id" element={<PeopleDetail />} />
+                  <Route path="/genres/:slug" element={<Genres />} />
+                  <Route path="/collections/:slug" element={<Collections />} />
+                  <Route path="/u/:username" element={<PublicProfile />} />
+
+                  {/* 404 Fallback */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </main>
+              <WeatherAssistant />
               <Footer />
             </div>
           </BrowserRouter>

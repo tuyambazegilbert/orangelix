@@ -49,7 +49,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const resolvedUser = await FirebaseData.ensureUserProfile(fbUser);
           setCurrentUser(resolvedUser);
         } catch (err) {
-          console.error('[Auth] Failed to sync user profile:', err);
+          console.warn('[Auth] Firestore profile sync failed, falling back to Firebase Auth identity:', err);
+          const fallbackUser: User = {
+            id: fbUser.uid,
+            email: fbUser.email || '',
+            name: fbUser.displayName || fbUser.email?.split('@')[0] || 'OrangeFlix Member',
+            isAdmin: fbUser.email?.toLowerCase() === 'admin@orangeflix.com',
+            role: fbUser.email?.toLowerCase() === 'admin@orangeflix.com' ? 'admin' : 'member',
+            photoURL: fbUser.photoURL || '',
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+          };
+          setCurrentUser(fallbackUser);
         } finally {
           setIsLoading(false);
         }
@@ -57,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return () => unsubscribe();
     }
 
-    // Local authentication fallback for dev environments
+    // Local authentication fallback for dev environments only when Firebase is unavailable
     setCurrentUser(AuthService.getCurrentUser());
     setIsLoading(false);
     return undefined;

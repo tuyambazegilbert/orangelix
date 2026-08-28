@@ -41,5 +41,12 @@ export const tmdbEndpoints = {
   // Genres
   movieGenres: '/genre/movie/list',
   tvGenres: '/genre/tv/list',
+
+  // People & Cast
+  personDetails: (id: number) => `/person/${id}`,
+  personCredits: (id: number) => `/person/${id}/combined_credits`,
+
+  // Collections
+  collectionDetails: (id: number) => `/collection/${id}`,
 };
 

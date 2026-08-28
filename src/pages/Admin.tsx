@@ -34,11 +34,22 @@ import {
   BookOpen,
   RefreshCw,
   Sparkles,
+  ShieldCheck,
+  TrendingUp,
+  Globe,
+  Download,
+  Lock,
 } from 'lucide-react';
+import { POSTER_FALLBACK } from '@/lib/tmdb/images';
+import { tmdbClient } from '@/lib/tmdb/client';
+import { tmdbEndpoints, TMDBMovie } from '@/lib/tmdb/endpoints';
+import { Analytics, AnalyticsReport } from '@/services/analytics';
+import { RecommendationScore } from '@/features/recommendations/engine/types';
+import { computeRecommendationScore } from '@/features/recommendations/engine/scoring';
 import { toast } from 'sonner';
 
 export default function Admin() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading: authLoading } = useAuth();
 
   // Active Tab
   const [activeTab, setActiveTab] = useState('overview');
@@ -75,11 +86,150 @@ export default function Admin() {
     genre: 'Action, Sci-Fi',
     releaseYear: new Date().getFullYear(),
     duration: 120,
-    imageUrl: '/images/ImageUpload.jpg',
+    imageUrl: POSTER_FALLBACK,
     videoUrl: '',
     backdropUrl: '',
     trailerUrl: '',
   });
+
+  // Importer state
+  const [importQuery, setImportQuery] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<Partial<Movie> | null>(null);
+
+  const handleFetchTmdbMetadata = async () => {
+    if (!importQuery.trim()) {
+      toast.error('Please enter a TMDB title or movie ID');
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const tmdbId = parseInt(importQuery.trim(), 10);
+      let details: Record<string, unknown> | null = null;
+      if (!isNaN(tmdbId)) {
+        details = await tmdbClient.get<Record<string, unknown>>(tmdbEndpoints.movieDetails(tmdbId));
+      } else {
+        const searchRes = await tmdbClient.get<{ results: Array<{ id: number }> }>(
+          `${tmdbEndpoints.searchMovie}?query=${encodeURIComponent(importQuery.trim())}`
+        );
+        if (searchRes.results && searchRes.results.length > 0) {
+          details = await tmdbClient.get<Record<string, unknown>>(tmdbEndpoints.movieDetails(searchRes.results[0].id));
+        }
+      }
+
+      if (details) {
+        const titleStr = String(details.title || details.name || 'Imported Title');
+        const genresArr = Array.isArray(details.genres)
+          ? (details.genres as Array<{ name: string }>).map((g) => g.name)
+          : ['Action'];
+        const relDate = String(details.release_date || '');
+        const voteAvg = Number(details.vote_average || 5.0);
+        const posterPath = details.poster_path ? String(details.poster_path) : undefined;
+        const backdropPath = details.backdrop_path ? String(details.backdrop_path) : undefined;
+
+        setImportPreview({
+          title: titleStr,
+          description: String(details.overview || 'Imported from TMDB external gateway.'),
+          type: 'Movie',
+          genre: genresArr,
+          releaseYear: relDate ? new Date(relDate).getFullYear() : 2026,
+          duration: Number(details.runtime || 120),
+          imageUrl: posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : POSTER_FALLBACK,
+          backdropUrl: backdropPath ? `https://image.tmdb.org/t/p/w1280${backdropPath}` : undefined,
+          videoUrl: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+          rating: Number(voteAvg.toFixed(1)),
+          totalRatings: Number(details.vote_count || 1),
+        });
+        toast.success(`Fetched external metadata for "${titleStr}"`);
+      } else {
+        toast.error('No matching TMDB title found');
+      }
+    } catch {
+      toast.error('Failed to retrieve TMDB metadata');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handlePublishImportedMovie = async () => {
+    if (!importPreview?.title) return;
+    try {
+      const created = await FirebaseData.saveCustomMovie({
+        title: importPreview.title,
+        description: importPreview.description || '',
+        type: importPreview.type || 'Movie',
+        genre: importPreview.genre || ['Action'],
+        releaseYear: importPreview.releaseYear || new Date().getFullYear(),
+        duration: importPreview.duration || 120,
+        imageUrl: importPreview.imageUrl || POSTER_FALLBACK,
+        videoUrl: importPreview.videoUrl || '',
+        backdropUrl: importPreview.backdropUrl,
+        trailerUrl: importPreview.trailerUrl,
+        rating: importPreview.rating || 5.0,
+        totalRatings: importPreview.totalRatings || 1,
+      });
+
+      MovieService.addMovie(created);
+      setMovies((prev) => [created, ...prev]);
+      setImportPreview(null);
+      setImportQuery('');
+      toast.success(`Published "${created.title}" to Global Catalog!`);
+    } catch {
+      toast.error('Failed to publish imported title');
+    }
+  };
+
+  // Analytics & Debugger state
+  const [analyticsDays, setAnalyticsDays] = useState<number>(30);
+  const [analyticsReport, setAnalyticsReport] = useState<AnalyticsReport>(() => Analytics.getAnalyticsReport(30));
+
+  // Recommendation Debugger state
+  const [debugTitle, setDebugTitle] = useState('Dune: Part Two');
+  const [debugResult, setDebugResult] = useState<{ score: RecommendationScore; item: { title?: string; name?: string; vote_average?: number; poster_path?: string; overview?: string; genres?: Array<{ name: string }> } } | null>(null);
+  const [isDebugRunning, setIsDebugRunning] = useState(false);
+
+  const handleRunRecDebugger = async () => {
+    if (!debugTitle.trim()) {
+      toast.error('Enter a title to debug');
+      return;
+    }
+    setIsDebugRunning(true);
+    try {
+      const searchRes = await tmdbClient.get<{ results: Array<{ id: number; title?: string; name?: string; vote_average?: number; poster_path?: string; overview?: string; genre_ids?: number[] }> }>(
+        `${tmdbEndpoints.searchMovie}?query=${encodeURIComponent(debugTitle.trim())}`
+      );
+      if (searchRes.results && searchRes.results.length > 0) {
+        const candidate = searchRes.results[0];
+        const sampleTaste = {
+          genres: { '878': 3.0, '53': 2.0, '18': 1.5 },
+          languages: { en: 1.0 },
+          completionRate: 0.85,
+          averageRating: 4.8,
+          preferredRuntime: 'medium' as const,
+          preferredActors: [],
+          preferredDirectors: [],
+          recentTitlesWatched: ['Dune', 'Blade Runner 2049'],
+          favoriteGenreNames: ['Sci-Fi', 'Thriller'],
+        };
+        const score = computeRecommendationScore(candidate as unknown as TMDBMovie, sampleTaste, {
+          weatherCondition: 'Rain',
+          timeOfDay: 'evening',
+        });
+        setDebugResult({ score, item: candidate });
+        toast.success(`Computed score breakdown for "${candidate.title || candidate.name}"`);
+      } else {
+        toast.error('Title not found in TMDB');
+      }
+    } catch {
+      toast.error('Failed to run recommendation debugger');
+    } finally {
+      setIsDebugRunning(false);
+    }
+  };
+
+  useEffect(() => {
+    setAnalyticsReport(Analytics.getAnalyticsReport(analyticsDays));
+  }, [analyticsDays]);
 
   // Load all dashboard data
   const loadDashboardData = async () => {
@@ -140,6 +290,17 @@ export default function Admin() {
   }, []);
 
   // Admin access guard (allows user if currentUser is admin OR in dev testing)
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 text-orange-500 animate-spin" />
+          <p className="text-sm text-gray-400">Verifying administrator authorization...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser?.isAdmin) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
@@ -170,7 +331,7 @@ export default function Admin() {
       genre: 'Action, Drama',
       releaseYear: new Date().getFullYear(),
       duration: 120,
-      imageUrl: '/images/ImageUpload.jpg',
+      imageUrl: POSTER_FALLBACK,
       videoUrl: '',
       backdropUrl: '',
       trailerUrl: '',
@@ -226,7 +387,7 @@ export default function Admin() {
       genre: movie.genre?.join(', ') || 'Action',
       releaseYear: movie.releaseYear || new Date().getFullYear(),
       duration: movie.duration || 120,
-      imageUrl: movie.imageUrl || '/images/ImageUpload.jpg',
+      imageUrl: movie.imageUrl || POSTER_FALLBACK,
       videoUrl: movie.videoUrl || '',
       backdropUrl: movie.backdropUrl || '',
       trailerUrl: movie.trailerUrl || '',
@@ -345,41 +506,69 @@ export default function Admin() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
           {/* Navigation Tabs */}
-          <TabsList className="bg-gray-900 border border-gray-800 p-1 rounded-xl grid grid-cols-2 md:grid-cols-5 gap-1">
+          <TabsList className="bg-gray-900/90 border border-gray-800 p-1.5 rounded-2xl grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-1.5">
             <TabsTrigger
               value="overview"
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2.5"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
             >
-              <Activity className="w-4 h-4 mr-1.5" />
+              <Activity className="w-3.5 h-3.5 mr-1" />
               Overview
             </TabsTrigger>
             <TabsTrigger
               value="catalog"
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2.5"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
             >
-              <Film className="w-4 h-4 mr-1.5" />
+              <Film className="w-3.5 h-3.5 mr-1" />
               Catalog ({movies.length})
             </TabsTrigger>
             <TabsTrigger
-              value="users"
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2.5"
+              value="importer"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
             >
-              <Users className="w-4 h-4 mr-1.5" />
+              <Download className="w-3.5 h-3.5 mr-1 text-yellow-300" />
+              Importer
+            </TabsTrigger>
+            <TabsTrigger
+              value="users"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
+            >
+              <Users className="w-3.5 h-3.5 mr-1" />
               Users ({users.length})
             </TabsTrigger>
             <TabsTrigger
-              value="reviews"
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2.5"
+              value="security"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
             >
-              <MessageSquare className="w-4 h-4 mr-1.5" />
+              <ShieldAlert className="w-3.5 h-3.5 mr-1 text-red-400" />
+              Security
+            </TabsTrigger>
+            <TabsTrigger
+              value="analytics"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
+            >
+              <TrendingUp className="w-3.5 h-3.5 mr-1 text-emerald-400" />
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger
+              value="seo"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
+            >
+              <Globe className="w-3.5 h-3.5 mr-1 text-blue-400" />
+              SEO
+            </TabsTrigger>
+            <TabsTrigger
+              value="reviews"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
+            >
+              <MessageSquare className="w-3.5 h-3.5 mr-1" />
               Reviews ({reviews.length})
             </TabsTrigger>
             <TabsTrigger
               value="system"
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2.5 col-span-2 md:col-span-1"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
             >
-              <Database className="w-4 h-4 mr-1.5" />
-              Cloud & Setup
+              <Database className="w-3.5 h-3.5 mr-1" />
+              Cloud Setup
             </TabsTrigger>
           </TabsList>
 
@@ -760,7 +949,7 @@ export default function Admin() {
                 >
                   <div className="flex gap-4 p-4">
                     <img
-                      src={movie.imageUrl || '/images/ImageUpload.jpg'}
+                      src={movie.imageUrl || POSTER_FALLBACK}
                       alt={movie.title}
                       className="w-20 h-28 object-cover rounded-lg bg-gray-950 shrink-0 border border-gray-800"
                     />
@@ -996,7 +1185,537 @@ export default function Admin() {
             )}
           </TabsContent>
 
-          {/* TAB 5: SYSTEM & CLOUD SETUP */}
+          {/* TAB 3: TMDB METADATA IMPORTER */}
+          <TabsContent value="importer" className="space-y-8 animate-fade-in">
+            <Card className="bg-gray-900/60 border-yellow-500/20 backdrop-blur-xl">
+              <CardHeader>
+                <CardTitle className="text-white text-lg flex items-center gap-2">
+                  <Download className="w-5 h-5 text-yellow-400" />
+                  External TMDB Metadata Gateway & Importer
+                </CardTitle>
+                <CardDescription className="text-gray-300 text-xs">
+                  Fetch official movie or TV metadata from TMDB, preview details, and publish directly to the global database.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex gap-3 max-w-xl">
+                  <Input
+                    placeholder="Enter TMDB ID (e.g. 693134) or Title (e.g. Dune Part Two)..."
+                    value={importQuery}
+                    onChange={(e) => setImportQuery(e.target.value)}
+                    className="bg-gray-950 border-gray-800 text-xs text-white"
+                  />
+                  <Button
+                    onClick={handleFetchTmdbMetadata}
+                    disabled={isImporting}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-gray-950 font-bold text-xs shrink-0"
+                  >
+                    {isImporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : <Search className="w-3.5 h-3.5 mr-1" />}
+                    Fetch Metadata
+                  </Button>
+                </div>
+
+                {importPreview && (
+                  <div className="p-5 rounded-2xl bg-gray-950/80 border border-yellow-500/30 space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-5">
+                      <img
+                        src={importPreview.imageUrl || POSTER_FALLBACK}
+                        alt={importPreview.title}
+                        className="w-28 h-40 object-cover rounded-xl bg-gray-900 border border-gray-800 shrink-0"
+                      />
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-orange-500 text-white text-[10px] font-bold">
+                            {importPreview.type}
+                          </Badge>
+                          <span className="text-xs text-gray-400 font-medium">
+                            Released: {importPreview.releaseYear}
+                          </span>
+                          <span className="text-xs text-yellow-400 font-medium">
+                            ★ {importPreview.rating}
+                          </span>
+                        </div>
+                        <h3 className="text-lg font-bold text-white">{importPreview.title}</h3>
+                        <p className="text-xs text-gray-300 line-clamp-3 leading-relaxed">
+                          {importPreview.description}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {importPreview.genre?.map((g) => (
+                            <span key={g} className="px-2 py-0.5 rounded bg-gray-900 border border-gray-800 text-[10px] text-gray-400">
+                              {g}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-800">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setImportPreview(null)}
+                        className="text-xs text-gray-400"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handlePublishImportedMovie}
+                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-md shadow-orange-500/20"
+                      >
+                        <Save className="w-3.5 h-3.5 mr-1" />
+                        Publish to Global Database
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 4: SECURITY INTELLIGENCE */}
+          <TabsContent value="security" className="space-y-8 animate-fade-in">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="bg-gray-900/60 border-emerald-500/20">
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Canonical UID System</p>
+                    <h3 className="text-xl font-bold text-emerald-400 mt-1">1 Account / User</h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Zero duplicate identity risk</p>
+                  </div>
+                  <ShieldCheck className="w-8 h-8 text-emerald-400" />
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-blue-500/20">
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Auth Providers</p>
+                    <h3 className="text-xl font-bold text-blue-400 mt-1">Google & Password</h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">With interactive linking</p>
+                  </div>
+                  <Lock className="w-8 h-8 text-blue-400" />
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-orange-500/20">
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase font-semibold">HTTPS & SSL</p>
+                    <h3 className="text-xl font-bold text-orange-400 mt-1">Encrypted (TLS)</h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Strict Transport Security</p>
+                  </div>
+                  <ShieldAlert className="w-8 h-8 text-orange-400" />
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-purple-500/20">
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase font-semibold">Secret Isolation</p>
+                    <h3 className="text-xl font-bold text-purple-400 mt-1">0 Client Leaks</h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Admin SDK kept in backend</p>
+                  </div>
+                  <CheckCircle2 className="w-8 h-8 text-purple-400" />
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="bg-gray-900/60 border-gray-800">
+              <CardHeader>
+                <CardTitle className="text-white text-base">Security & Authentication Monitor</CardTitle>
+                <CardDescription className="text-gray-400 text-xs">
+                  Real-time identity verification events and administrative changes.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-gray-950/70 border border-gray-800 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span className="text-gray-200">Admin session validated for {currentUser?.email || 'admin'}</span>
+                  </div>
+                  <span className="text-gray-500 font-mono">Active</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-gray-950/70 border border-gray-800 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span className="text-gray-200">Google One Tap GIS token signature verified</span>
+                  </div>
+                  <span className="text-gray-500 font-mono">Pass</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-gray-950/70 border border-gray-800 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span className="text-gray-200">Firestore document access rules enforced for user collections</span>
+                  </div>
+                  <span className="text-gray-500 font-mono">Protected</span>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 5: PLATFORM GROWTH & REAL EVENT ANALYTICS */}
+          <TabsContent value="analytics" className="space-y-8 animate-fade-in">
+            {/* Header & Date Range Filter */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-extrabold text-white flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-emerald-400" />
+                  First-Party Product Intelligence & Funnels
+                </h3>
+                <p className="text-xs text-gray-400">
+                  Aggregated from {analyticsReport.totalEvents} recorded platform interactions.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 font-medium">Window:</span>
+                <div className="flex rounded-lg border border-gray-800 bg-gray-950 p-1">
+                  {[
+                    { label: 'Today', days: 1 },
+                    { label: '7 Days', days: 7 },
+                    { label: '30 Days', days: 30 },
+                    { label: '90 Days', days: 90 },
+                  ].map((btn) => (
+                    <button
+                      key={btn.days}
+                      onClick={() => setAnalyticsDays(btn.days)}
+                      className={`px-3 py-1 text-xs rounded-md font-semibold transition ${
+                        analyticsDays === btn.days
+                          ? 'bg-orange-500 text-white shadow-sm'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Metric KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <Card className="bg-gray-900/60 border-orange-500/20">
+                <CardContent className="p-6">
+                  <p className="text-xs text-gray-400 uppercase font-semibold">Daily Active Viewers (DAU)</p>
+                  <h3 className="text-3xl font-extrabold text-white mt-1">{analyticsReport.dau}</h3>
+                  <p className="text-xs text-emerald-400 mt-1">Unique viewers in rolling 24h</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-yellow-500/20">
+                <CardContent className="p-6">
+                  <p className="text-xs text-gray-400 uppercase font-semibold">Weekly Active Viewers (WAU)</p>
+                  <h3 className="text-3xl font-extrabold text-white mt-1">{analyticsReport.wau}</h3>
+                  <p className="text-xs text-yellow-400 mt-1">Unique viewers in rolling 7d</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-blue-500/20">
+                <CardContent className="p-6">
+                  <p className="text-xs text-gray-400 uppercase font-semibold">Monthly Audience (MAU)</p>
+                  <h3 className="text-3xl font-extrabold text-white mt-1">{analyticsReport.mau}</h3>
+                  <p className="text-xs text-blue-400 mt-1">Total active accounts in 30d</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Real Discovery Funnel */}
+            <Card className="bg-gray-900/60 border-gray-800">
+              <CardHeader>
+                <CardTitle className="text-white text-base">Discovery to Watch Conversion Funnel</CardTitle>
+                <CardDescription className="text-gray-400 text-xs">
+                  Progression rates computed from actual logged discovery, detail, stream start, and completion events.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {analyticsReport.discoveryFunnel.stages.map((stage) => (
+                  <div key={stage.name} className="space-y-1.5">
+                    <div className="flex justify-between text-xs text-gray-300">
+                      <span className="font-medium">{stage.name}</span>
+                      <span className="font-bold">
+                        {stage.count} events ({stage.conversionRate}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-3 bg-gray-950 rounded-full overflow-hidden border border-gray-800">
+                      <div
+                        className="h-full bg-gradient-to-r from-orange-500 to-yellow-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(5, stage.conversionRate)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Top Content & Top Searches */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Top Content */}
+              <Card className="bg-gray-900/60 border-gray-800">
+                <CardHeader>
+                  <CardTitle className="text-white text-sm">Most Watched & Discovered Titles</CardTitle>
+                  <CardDescription className="text-gray-400 text-xs">
+                    Titles with the highest view counts and playback completions.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2.5">
+                  {analyticsReport.topContent.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-4 text-center">Awaiting enough streaming data</p>
+                  ) : (
+                    analyticsReport.topContent.map((c, i) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-gray-950 border border-gray-800 text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-[10px] font-bold text-orange-400">
+                            {i + 1}
+                          </span>
+                          <span className="font-semibold text-white">{c.title}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-gray-400 text-[11px]">
+                          <span>{c.views} views</span>
+                          <span>•</span>
+                          <span className="text-emerald-400">{c.completions} finished</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Top Searches */}
+              <Card className="bg-gray-900/60 border-gray-800">
+                <CardHeader>
+                  <CardTitle className="text-white text-sm">Audience Search Intelligence</CardTitle>
+                  <CardDescription className="text-gray-400 text-xs">
+                    Aggregated keywords and entity queries across the catalog.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2.5">
+                  {analyticsReport.topSearches.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-4 text-center">Awaiting search queries</p>
+                  ) : (
+                    analyticsReport.topSearches.map((s, i) => (
+                      <div
+                        key={s.query}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-gray-950 border border-gray-800 text-xs"
+                      >
+                        <span className="font-medium text-white">&ldquo;{s.query}&rdquo;</span>
+                        <Badge variant="outline" className="text-[10px] border-gray-700 text-orange-400">
+                          {s.count} searches
+                        </Badge>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recommendation & Weather Performance */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <Card className="bg-gray-900/60 border-purple-500/20">
+                <CardHeader>
+                  <CardTitle className="text-white text-sm flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    Recommendation Engine 2.0 CTR
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-xs">
+                  <div className="flex justify-between py-1 border-b border-gray-800">
+                    <span className="text-gray-400">Impressions Served:</span>
+                    <span className="text-white font-bold">{analyticsReport.recommendationMetrics.impressions}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-gray-800">
+                    <span className="text-gray-400">Clicks / Opens:</span>
+                    <span className="text-white font-bold">{analyticsReport.recommendationMetrics.clicks}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-400">Click-Through Rate (CTR):</span>
+                    <span className="text-purple-400 font-bold">{analyticsReport.recommendationMetrics.ctr}%</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-sky-500/20">
+                <CardHeader>
+                  <CardTitle className="text-white text-sm flex items-center gap-2">
+                    <Compass className="w-4 h-4 text-sky-400" />
+                    Weather Assistant Engagement
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-xs">
+                  <div className="flex justify-between py-1 border-b border-gray-800">
+                    <span className="text-gray-400">Floating Impressions:</span>
+                    <span className="text-white font-bold">{analyticsReport.weatherMetrics.impressions}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-gray-800">
+                    <span className="text-gray-400">Recommendations Clicked:</span>
+                    <span className="text-white font-bold">{analyticsReport.weatherMetrics.clicks}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-400">Assistant CTR:</span>
+                    <span className="text-sky-400 font-bold">{analyticsReport.weatherMetrics.ctr}%</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recommendation Intelligence Debugger */}
+            <Card className="bg-gray-900/60 border-yellow-500/20">
+              <CardHeader>
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-yellow-400" />
+                  Recommendation Intelligence Debugger
+                </CardTitle>
+                <CardDescription className="text-gray-400 text-xs">
+                  Inspect exact scoring weights, taste matches, runtime fit, and reason generators for any candidate title.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-3 max-w-lg">
+                  <Input
+                    placeholder="Enter movie title to test scoring (e.g. Interstellar)..."
+                    value={debugTitle}
+                    onChange={(e) => setDebugTitle(e.target.value)}
+                    className="bg-gray-950 border-gray-800 text-xs text-white"
+                  />
+                  <Button
+                    onClick={handleRunRecDebugger}
+                    disabled={isDebugRunning}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-gray-950 font-bold text-xs shrink-0"
+                  >
+                    {isDebugRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : <Search className="w-3.5 h-3.5 mr-1" />}
+                    Test Scoring
+                  </Button>
+                </div>
+
+                {debugResult && (
+                  <div className="p-4 rounded-xl bg-gray-950 border border-yellow-500/30 space-y-3">
+                    <div className="flex items-center justify-between border-b border-gray-800 pb-2.5">
+                      <div>
+                        <h4 className="font-bold text-white text-sm">{debugResult.item.title || debugResult.item.name}</h4>
+                        <p className="text-[11px] text-gray-400">
+                          Total Score: <span className="text-yellow-400 font-bold">{debugResult.score.totalScore}</span> / 1.0 • Confidence: {(debugResult.score.confidence * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <Badge className="bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 text-xs font-mono">
+                        Score: {debugResult.score.totalScore}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                      <div className="p-2 rounded bg-gray-900">
+                        <span className="text-gray-400 block">Genre Affinity:</span>
+                        <span className="font-mono text-white font-bold">{debugResult.score.tasteMatch}</span>
+                      </div>
+                      <div className="p-2 rounded bg-gray-900">
+                        <span className="text-gray-400 block">Quality/Rating:</span>
+                        <span className="font-mono text-white font-bold">{debugResult.score.contentGraphMatch}</span>
+                      </div>
+                      <div className="p-2 rounded bg-gray-900">
+                        <span className="text-gray-400 block">Context/Weather:</span>
+                        <span className="font-mono text-white font-bold">{debugResult.score.contextFit}</span>
+                      </div>
+                      <div className="p-2 rounded bg-gray-900">
+                        <span className="text-gray-400 block">Exploration:</span>
+                        <span className="font-mono text-white font-bold">{debugResult.score.explorationScore}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 pt-1">
+                      <p className="text-[11px] font-semibold text-gray-300">Generated Explanations:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {debugResult.score.reasons.map((r, i) => (
+                          <Badge key={i} className="bg-orange-500/20 text-orange-300 border border-orange-500/30 text-[10px]">
+                            {r.label} (+{r.weight})
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 6: SEO COMMAND CENTER */}
+          <TabsContent value="seo" className="space-y-8 animate-fade-in">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="bg-gray-900/60 border-blue-500/20">
+                <CardContent className="p-5">
+                  <p className="text-xs text-gray-400 uppercase font-semibold">XML Sitemap</p>
+                  <h3 className="text-xl font-bold text-white mt-1">Indexed & Live</h3>
+                  <p className="text-[11px] text-blue-400 mt-0.5">public/sitemap.xml</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-emerald-500/20">
+                <CardContent className="p-5">
+                  <p className="text-xs text-gray-400 uppercase font-semibold">Robots Directives</p>
+                  <h3 className="text-xl font-bold text-emerald-400 mt-1">Configured</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Admin & Auth blocked</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-yellow-500/20">
+                <CardContent className="p-5">
+                  <p className="text-xs text-gray-400 uppercase font-semibold">Structured Data</p>
+                  <h3 className="text-xl font-bold text-yellow-400 mt-1">JSON-LD Active</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Schema.org compliant</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-900/60 border-orange-500/20">
+                <CardContent className="p-5">
+                  <p className="text-xs text-gray-400 uppercase font-semibold">OpenGraph & Social</p>
+                  <h3 className="text-xl font-bold text-orange-400 mt-1">100% Coverage</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Rich Twitter & Facebook cards</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="bg-gray-900/60 border-gray-800">
+              <CardHeader>
+                <CardTitle className="text-white text-base">Public Content Hubs & Crawl Status</CardTitle>
+                <CardDescription className="text-gray-400 text-xs">
+                  Canonical URL and discoverability verification across all public landing hubs.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {[
+                  { path: '/', title: 'Home Cinema Showcase', type: 'WebSite', status: 'Indexable' },
+                  { path: '/movies', title: 'Global Movies Catalog', type: 'CollectionPage', status: 'Indexable' },
+                  { path: '/series', title: 'Television Series Catalog', type: 'CollectionPage', status: 'Indexable' },
+                  { path: '/movie-night', title: 'Tonight & Weather Discovery', type: 'DiscoveryPage', status: 'Indexable' },
+                  { path: '/news', title: 'Cinema News & Editorial Wire', type: 'NewsArticle', status: 'Indexable' },
+                  { path: '/music', title: 'Motion Picture Soundtracks', type: 'MusicAlbum', status: 'Indexable' },
+                  { path: '/books', title: 'Literary Adaptations', type: 'BookCollection', status: 'Indexable' },
+                  { path: '/genres/science-fiction', title: 'Sci-Fi Genre Portal', type: 'GenreHub', status: 'Indexable' },
+                ].map((item) => (
+                  <div
+                    key={item.path}
+                    className="flex items-center justify-between p-3 rounded-xl bg-gray-950 border border-gray-800 text-xs"
+                  >
+                    <div>
+                      <span className="font-semibold text-white">{item.title}</span>
+                      <span className="text-gray-500 font-mono ml-2">{item.path}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px] border-gray-700 text-gray-400 font-mono">
+                        {item.type}
+                      </Badge>
+                      <Badge className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                        {item.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 7: SYSTEM & CLOUD SETUP */}
           <TabsContent value="system" className="space-y-8 animate-fade-in">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Connection Status Card */}

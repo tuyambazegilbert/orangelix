@@ -1,2 +1,29 @@
 User-agent: *
 Allow: /
+Allow: /movies
+Allow: /series
+Allow: /movie/*
+Allow: /series/*
+Allow: /news
+Allow: /news/*
+Allow: /people/*
+Allow: /genres/*
+Allow: /collections/*
+Allow: /music
+Allow: /music/*
+Allow: /books
+Allow: /movie-night
+Allow: /tonight
+Allow: /trending
+Allow: /new
+
+Disallow: /admin
+Disallow: /admin/*
+Disallow: /profile
+Disallow: /profile/*
+Disallow: /settings
+Disallow: /account
+Disallow: /login
+Disallow: /register
+
+Sitemap: https://orangeflixx.vercel.app/sitemap.xml

@@ -11,7 +11,7 @@ import { POSTER_FALLBACK } from '@/lib/tmdb/images';
 import { toast } from 'sonner';
 
 export default function WatchLater() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading: authLoading } = useAuth();
   const [items, setItems] = useState<(MediaItem | Movie)[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,16 +81,16 @@ export default function WatchLater() {
     loadWatchLaterMovies();
   };
 
-  if (!currentUser) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-500 mb-4"></div>
       </div>
     );
+  }
+
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
   }
 
   return (

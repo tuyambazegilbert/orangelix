@@ -12,7 +12,8 @@ import {
 } from 'firebase/firestore';
 import { firestore } from './firebase';
 import { MediaItem } from '@/types/media';
-import { AdminStats, Movie, Review, User } from '@/types';
+import { POSTER_FALLBACK } from '@/lib/tmdb/images';
+import { AdminStats, Movie, Review, User, UserPreferences, WatchHistoryItem, UserRating } from '@/types';
 
 type StoredContent =
   | Pick<MediaItem, 'tmdbId' | 'mediaType' | 'title' | 'posterUrl' | 'releaseYear' | 'voteAverage'>
@@ -40,6 +41,19 @@ const compactContent = (content: StoredContent) =>
         rating: (content as Movie).rating,
         mediaType: (content as Movie).type?.toLowerCase() === 'series' ? 'tv' : 'movie',
       };
+
+function cleanFirestoreData<T extends Record<string, unknown>>(data: T): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      result[key] = cleanFirestoreData(value as Record<string, unknown>);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
 
 export interface AdminActivity {
   id: string;
@@ -92,25 +106,25 @@ export const FirebaseData = {
         // Safe update: metadata only, never overwrite user data
         await setDoc(
           userRef,
-          {
+          cleanFirestoreData({
             email: user.email || d.email || '',
             name: resolvedName,
             photoURL: resolvedPhoto,
             lastLoginAt: new Date().toISOString(),
             updatedAt: serverTimestamp(),
-          },
+          }),
           { merge: true }
         );
 
         // Also update public profile
         await setDoc(
           doc(firestore, 'profiles', user.uid),
-          {
+          cleanFirestoreData({
             userId: user.uid,
             displayName: resolvedName,
             avatarUrl: resolvedPhoto,
             updatedAt: serverTimestamp(),
-          },
+          }),
           { merge: true }
         );
 
@@ -128,18 +142,18 @@ export const FirebaseData = {
       }
 
       // Initial user profile creation
-      await setDoc(userRef, {
+      await setDoc(userRef, cleanFirestoreData({
         ...defaultUser,
         updatedAt: serverTimestamp(),
-      });
+      }));
 
       // Initial public profile
-      await setDoc(doc(firestore, 'profiles', user.uid), {
+      await setDoc(doc(firestore, 'profiles', user.uid), cleanFirestoreData({
         userId: user.uid,
         displayName: defaultUser.name,
         avatarUrl: defaultUser.photoURL,
         updatedAt: serverTimestamp(),
-      });
+      }));
 
       return defaultUser;
     } catch (err) {
@@ -160,7 +174,7 @@ export const FirebaseData = {
 
       await setDoc(
         userRef,
-        {
+        cleanFirestoreData({
           id: userId,
           email: input.email || data?.email || '',
           name: input.name || data?.name || 'OrangeFlix User',
@@ -169,7 +183,7 @@ export const FirebaseData = {
           lastLoginAt: new Date().toISOString(),
           updatedAt: serverTimestamp(),
           createdAt: data?.createdAt || input.createdAt || new Date().toISOString(),
-        },
+        }),
         { merge: true }
       );
     } catch (err) {
@@ -263,7 +277,7 @@ export const FirebaseData = {
           genre: Array.isArray(data.genre) ? data.genre : ['Action'],
           releaseYear: data.releaseYear || new Date().getFullYear(),
           duration: data.duration || 120,
-          imageUrl: data.imageUrl || '/images/ImageUpload.jpg',
+          imageUrl: data.imageUrl || POSTER_FALLBACK,
           videoUrl: data.videoUrl || '',
           backdropUrl: data.backdropUrl,
           trailerUrl: data.trailerUrl,
@@ -374,10 +388,13 @@ export const FirebaseData = {
   async setWatchlist(userId: string, content: StoredContent) {
     if (!firestore) return;
     try {
-      await setDoc(doc(firestore, 'watchlists', userId, 'items', contentId(content)), {
-        ...compactContent(content),
-        addedAt: serverTimestamp(),
-      });
+      await setDoc(
+        doc(firestore, 'watchlists', userId, 'items', contentId(content)),
+        cleanFirestoreData({
+          ...compactContent(content),
+          addedAt: serverTimestamp(),
+        })
+      );
     } catch (err) {
       console.warn('Firestore setWatchlist skipped:', err);
     }
@@ -396,10 +413,13 @@ export const FirebaseData = {
   async setFavorites(userId: string, content: StoredContent) {
     if (!firestore) return;
     try {
-      await setDoc(doc(firestore, 'favorites', userId, 'items', contentId(content)), {
-        ...compactContent(content),
-        addedAt: serverTimestamp(),
-      });
+      await setDoc(
+        doc(firestore, 'favorites', userId, 'items', contentId(content)),
+        cleanFirestoreData({
+          ...compactContent(content),
+          addedAt: serverTimestamp(),
+        })
+      );
     } catch (err) {
       console.warn('Firestore setFavorites skipped:', err);
     }
@@ -482,6 +502,244 @@ export const FirebaseData = {
     } catch (err) {
       console.warn('Failed to compute live Firestore stats:', err);
       return defaultStats;
+    }
+  },
+
+  // -------------------------------------------------------------
+  // USER WATCH HISTORY & CONTINUITY
+  // -------------------------------------------------------------
+  async getWatchHistory(userId: string): Promise<WatchHistoryItem[]> {
+    if (!firestore) return [];
+    try {
+      const col = collection(firestore, 'watchHistory', userId, 'items');
+      const q = query(col, orderBy('watchedAt', 'desc'), limit(50));
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          contentId: d.id,
+          tmdbId: data.tmdbId,
+          mediaType: data.mediaType || 'movie',
+          title: data.title || 'Untitled',
+          posterUrl: data.posterUrl,
+          progressSeconds: data.progressSeconds || 0,
+          durationSeconds: data.durationSeconds || 7200,
+          genre: data.genre || [],
+          watchedAt: data.watchedAt?.toDate ? data.watchedAt.toDate().toISOString() : data.watchedAt || new Date().toISOString(),
+        };
+      });
+    } catch (err) {
+      console.warn('Firestore getWatchHistory error:', err);
+      return [];
+    }
+  },
+
+  async saveWatchProgress(userId: string, item: Omit<WatchHistoryItem, 'watchedAt'> & { watchedAt?: string }) {
+    if (!firestore) return;
+    try {
+      await setDoc(
+        doc(firestore, 'watchHistory', userId, 'items', item.contentId),
+        cleanFirestoreData({
+          ...item,
+          watchedAt: serverTimestamp(),
+        })
+      );
+    } catch (err) {
+      console.warn('Firestore saveWatchProgress error:', err);
+    }
+  },
+
+  async setHistory(userId: string, media: StoredContent | { title?: string; genres?: string[]; posterUrl?: string; imageUrl?: string; mediaType?: string; tmdbId?: number }, seconds: number, total: number) {
+    if (!firestore) return;
+    try {
+      const id = contentId(media as StoredContent);
+      const title = 'title' in media ? media.title || 'Untitled' : 'Untitled';
+      const posterUrl = 'posterUrl' in media ? media.posterUrl : ('imageUrl' in media ? media.imageUrl : undefined);
+      const mediaType = ('mediaType' in media && media.mediaType === 'tv') ? 'tv' : 'movie';
+      const genre = 'genres' in media && Array.isArray(media.genres) ? media.genres : ('genre' in media && Array.isArray(media.genre) ? media.genre : ['Action']);
+
+      await setDoc(
+        doc(firestore, 'watchHistory', userId, 'items', id),
+        cleanFirestoreData({
+          contentId: id,
+          tmdbId: 'tmdbId' in media ? media.tmdbId : undefined,
+          mediaType,
+          title,
+          posterUrl,
+          progressSeconds: Math.floor(seconds),
+          durationSeconds: Math.floor(total) || 7200,
+          genre,
+          watchedAt: serverTimestamp(),
+        })
+      );
+    } catch (err) {
+      console.warn('Firestore setHistory error:', err);
+    }
+  },
+
+  async removeWatchHistory(userId: string, contentId: string) {
+    if (!firestore) return;
+    try {
+      await deleteDoc(doc(firestore, 'watchHistory', userId, 'items', contentId));
+    } catch (err) {
+      console.warn('Firestore removeWatchHistory error:', err);
+    }
+  },
+
+  async clearWatchHistory(userId: string) {
+    if (!firestore) return;
+    try {
+      const snap = await getDocs(collection(firestore, 'watchHistory', userId, 'items'));
+      const deletes = snap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deletes);
+    } catch (err) {
+      console.warn('Firestore clearWatchHistory error:', err);
+    }
+  },
+
+  // -------------------------------------------------------------
+  // USER RATINGS
+  // -------------------------------------------------------------
+  async getUserRatings(userId: string): Promise<UserRating[]> {
+    if (!firestore) return [];
+    try {
+      const col = collection(firestore, 'ratings', userId, 'items');
+      const snap = await getDocs(col);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          movieId: d.id,
+          mediaTitle: data.mediaTitle || 'Untitled',
+          rating: data.rating || 5,
+          posterUrl: data.posterUrl,
+          mediaType: data.mediaType || 'movie',
+          ratedAt: data.ratedAt?.toDate ? data.ratedAt.toDate().toISOString() : data.ratedAt || new Date().toISOString(),
+        };
+      });
+    } catch (err) {
+      console.warn('Firestore getUserRatings error:', err);
+      return [];
+    }
+  },
+
+  async saveUserRating(userId: string, rating: UserRating) {
+    if (!firestore) return;
+    try {
+      await setDoc(
+        doc(firestore, 'ratings', userId, 'items', rating.movieId),
+        cleanFirestoreData({
+          ...rating,
+          ratedAt: serverTimestamp(),
+        })
+      );
+    } catch (err) {
+      console.warn('Firestore saveUserRating error:', err);
+    }
+  },
+
+  async removeUserRating(userId: string, movieId: string) {
+    if (!firestore) return;
+    try {
+      await deleteDoc(doc(firestore, 'ratings', userId, 'items', movieId));
+    } catch (err) {
+      console.warn('Firestore removeUserRating error:', err);
+    }
+  },
+
+  // -------------------------------------------------------------
+  // USER PREFERENCES
+  // -------------------------------------------------------------
+  async getUserPreferences(userId: string): Promise<UserPreferences | null> {
+    if (!firestore) return null;
+    try {
+      const snap = await getDoc(doc(firestore, 'users', userId));
+      if (snap.exists() && snap.data().preferences) {
+        return snap.data().preferences as UserPreferences;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
+
+  async saveUserPreferences(userId: string, prefs: Partial<UserPreferences>) {
+    if (!firestore) return;
+    try {
+      await setDoc(
+        doc(firestore, 'users', userId),
+        cleanFirestoreData({
+          preferences: prefs,
+          updatedAt: serverTimestamp(),
+        }),
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Firestore saveUserPreferences error:', err);
+    }
+  },
+
+  // -------------------------------------------------------------
+  // DATA EXPORT & ACCOUNT DELETION
+  // -------------------------------------------------------------
+  async exportFullUserData(userId: string) {
+    const defaultExport = {
+      exportedAt: new Date().toISOString(),
+      user: null as User | null,
+      preferences: null as UserPreferences | null,
+      history: [] as WatchHistoryItem[],
+      ratings: [] as UserRating[],
+      favorites: [] as unknown[],
+      watchlist: [] as unknown[],
+    };
+
+    if (!firestore) return defaultExport;
+
+    try {
+      const [userProfile, prefs, history, ratings, favsSnap, watchSnap] = await Promise.all([
+        this.getUserProfile(userId),
+        this.getUserPreferences(userId),
+        this.getWatchHistory(userId),
+        this.getUserRatings(userId),
+        getDocs(collection(firestore, 'favorites', userId, 'items')),
+        getDocs(collection(firestore, 'watchlists', userId, 'items')),
+      ]);
+
+      return {
+        exportedAt: new Date().toISOString(),
+        user: userProfile,
+        preferences: prefs,
+        history,
+        ratings,
+        favorites: favsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        watchlist: watchSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      };
+    } catch (err) {
+      console.error('Failed to export user data:', err);
+      return defaultExport;
+    }
+  },
+
+  async deleteUserAccountData(userId: string): Promise<boolean> {
+    if (!firestore) return true;
+    try {
+      // 1. Delete subcollections
+      const collectionsToPurge = ['favorites', 'watchlists', 'watchHistory', 'ratings'];
+      for (const colName of collectionsToPurge) {
+        const snap = await getDocs(collection(firestore, colName, userId, 'items'));
+        await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+      }
+
+      // 2. Delete user & profile docs
+      await Promise.all([
+        deleteDoc(doc(firestore, 'users', userId)),
+        deleteDoc(doc(firestore, 'profiles', userId)),
+      ]);
+
+      await this.logActivity('DELETE_USER_ACCOUNT', `User account ${userId} requested full deletion.`);
+      return true;
+    } catch (err) {
+      console.error('Failed to purge user account data:', err);
+      return false;
     }
   },
 };
