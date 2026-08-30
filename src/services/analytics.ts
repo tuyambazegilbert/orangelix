@@ -164,9 +164,12 @@ export const Analytics = {
         ...event,
         serverTimestamp: serverTimestamp(),
       });
-      void addDoc(collection(firestore, 'activityLogs'), sanitized).catch((err) => {
-        // Silently catch background cloud log errors
-        console.warn('[Analytics] Cloud sync skipped:', err);
+      void addDoc(collection(firestore, 'activityLogs'), sanitized).catch((err: unknown) => {
+        // Silently catch background cloud log errors without console spam
+        const errStr = String(err);
+        if (!errStr.includes('insufficient permissions') && !errStr.includes('Missing or insufficient permissions')) {
+          console.debug?.('[Analytics] Cloud sync deferred:', err);
+        }
       });
     }
 

@@ -153,3 +153,10 @@ node scripts/setup-firestore.js
 node scripts/migrate-duplicate-users.js --dry-run
 ```
 
+## 6. Secure admin provisioning
+
+The application creates every new account as a member. After the account has
+signed in once, promote a trusted operator from the Firebase Console by setting
+`users/<uid>.isAdmin` to `true` and `role` to `admin`, then deploy the included
+`firestore.rules`. Never grant administrator access based on an email address
+in browser code, and never commit an Admin SDK private key to this repository.

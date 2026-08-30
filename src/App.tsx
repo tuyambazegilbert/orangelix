@@ -28,7 +28,7 @@ import MovieDetail from './pages/MovieDetail';
 import SeriesDetail from './pages/SeriesDetail';
 import NotFound from './pages/NotFound';
 
-// New Discovery Hubs & SEO Pages
+// Discovery Hubs & SEO Pages
 import MovieNight from './pages/MovieNight';
 import News from './pages/News';
 import NewsDetail from './pages/NewsDetail';
@@ -40,6 +40,11 @@ import Genres from './pages/Genres';
 import Collections from './pages/Collections';
 import PublicProfile from './pages/PublicProfile';
 import WeatherAssistant from '@/components/weather/WeatherAssistant';
+
+// Geo-Located Cinema & YouTube Discovery
+import CountryMovies from './pages/CountryMovies';
+import CountryMovieDetail from './pages/CountryMovieDetail';
+import GeoRecommendationCard from '@/components/geo/GeoRecommendationCard';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -96,10 +101,17 @@ const App = () => (
                   <Route path="/collections/:slug" element={<Collections />} />
                   <Route path="/u/:username" element={<PublicProfile />} />
 
+                  {/* Geo-Located YouTube Movie & Series Catalogs */}
+                  <Route path="/:countryCode/movies" element={<CountryMovies />} />
+                  <Route path="/:countryCode/series" element={<CountryMovies />} />
+                  <Route path="/:countryCode/movies/:slug" element={<CountryMovieDetail />} />
+                  <Route path="/:countryCode/watch/:slug" element={<CountryMovieDetail />} />
+
                   {/* 404 Fallback */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </main>
+              <GeoRecommendationCard />
               <WeatherAssistant />
               <Footer />
             </div>

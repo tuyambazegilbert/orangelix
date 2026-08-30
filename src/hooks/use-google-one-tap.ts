@@ -66,12 +66,19 @@ export function useGoogleOneTap({ onSuccess, onError, disabled = false }: UseGoo
           },
           auto_select: false,
           cancel_on_tap_outside: true,
+          use_fedcm_for_prompt: false,
           context: 'signin',
         });
 
-        window.google.accounts.id.prompt();
+        window.google.accounts.id.prompt((notification) => {
+          if (notification?.isNotDisplayed?.()) {
+            // Notification not displayed (e.g. dismissed, origin not matched, or cool-down)
+          } else if (notification?.isSkippedMoment?.()) {
+            // Moment skipped
+          }
+        });
       } catch (err) {
-        console.warn('[Google One Tap] Initialization skipped:', err);
+        console.debug?.('[Google One Tap] Initialization skipped:', err);
       }
     };
 

@@ -39,6 +39,7 @@ import {
   Globe,
   Download,
   Lock,
+  Compass,
 } from 'lucide-react';
 import { POSTER_FALLBACK } from '@/lib/tmdb/images';
 import { tmdbClient } from '@/lib/tmdb/client';
@@ -46,6 +47,8 @@ import { tmdbEndpoints, TMDBMovie } from '@/lib/tmdb/endpoints';
 import { Analytics, AnalyticsReport } from '@/services/analytics';
 import { RecommendationScore } from '@/features/recommendations/engine/types';
 import { computeRecommendationScore } from '@/features/recommendations/engine/scoring';
+import YouTubeGeoAdminTab from '@/components/admin/YouTubeGeoAdminTab';
+import { Youtube } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Admin() {
@@ -506,7 +509,7 @@ export default function Admin() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
           {/* Navigation Tabs */}
-          <TabsList className="bg-gray-900/90 border border-gray-800 p-1.5 rounded-2xl grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-1.5">
+          <TabsList className="bg-gray-900/90 border border-gray-800 p-1.5 rounded-2xl grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             <TabsTrigger
               value="overview"
               className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
@@ -569,6 +572,13 @@ export default function Admin() {
             >
               <Database className="w-3.5 h-3.5 mr-1" />
               Cloud Setup
+            </TabsTrigger>
+            <TabsTrigger
+              value="youtube-geo"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
+            >
+              <Youtube className="w-3.5 h-3.5 mr-1 text-red-400" />
+              YouTube Geo
             </TabsTrigger>
           </TabsList>
 
@@ -1800,6 +1810,11 @@ export default function Admin() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* TAB 10: YOUTUBE GEO DISCOVERY */}
+          <TabsContent value="youtube-geo" className="space-y-8 animate-fade-in">
+            <YouTubeGeoAdminTab />
           </TabsContent>
         </Tabs>
       </div>

@@ -63,6 +63,17 @@ export interface AdminActivity {
   timestamp: string;
 }
 
+export interface LibraryItem {
+  contentId: string;
+  tmdbId?: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  posterUrl?: string | null;
+  releaseYear?: number | null;
+  rating?: number;
+  addedAt?: string;
+}
+
 /** Global Cloud Database Service powered by Firebase Firestore */
 export const FirebaseData = {
   // -------------------------------------------------------------
@@ -82,8 +93,10 @@ export const FirebaseData = {
       id: user.uid,
       email: user.email || '',
       name: extra?.name || user.displayName || user.email?.split('@')[0] || 'OrangeFlix Member',
-      isAdmin: extra?.isAdmin ?? (user.email?.toLowerCase() === 'admin@orangeflix.com'),
-      role: (extra?.isAdmin ?? (user.email?.toLowerCase() === 'admin@orangeflix.com')) ? 'admin' : 'member',
+      // Privileges are granted only by an existing secure admin workflow, never
+      // inferred from an email address in browser code.
+      isAdmin: extra?.isAdmin ?? false,
+      role: (extra?.isAdmin ?? false) ? 'admin' : 'member',
       photoURL: user.photoURL || '',
       status: 'active',
       createdAt: user.metadata?.creationTime || new Date().toISOString(),
@@ -432,6 +445,52 @@ export const FirebaseData = {
       } catch (err) {
         console.warn('Firestore removeFavorites skipped:', err);
       }
+    }
+  },
+
+  async getFavorites(userId: string): Promise<LibraryItem[]> {
+    if (!firestore) return [];
+    try {
+      const snap = await getDocs(collection(firestore, 'favorites', userId, 'items'));
+      return snap.docs.map((entry) => {
+        const data = entry.data();
+        return {
+          contentId: entry.id,
+          tmdbId: data.tmdbId,
+          mediaType: data.mediaType === 'tv' ? 'tv' : 'movie',
+          title: data.title || 'Saved title',
+          posterUrl: data.posterUrl || null,
+          releaseYear: data.releaseYear || null,
+          rating: data.rating || 0,
+          addedAt: data.addedAt?.toDate?.().toISOString?.() || data.addedAt,
+        };
+      });
+    } catch (err) {
+      console.warn('Firestore getFavorites skipped:', err);
+      return [];
+    }
+  },
+
+  async getWatchlist(userId: string): Promise<LibraryItem[]> {
+    if (!firestore) return [];
+    try {
+      const snap = await getDocs(collection(firestore, 'watchlists', userId, 'items'));
+      return snap.docs.map((entry) => {
+        const data = entry.data();
+        return {
+          contentId: entry.id,
+          tmdbId: data.tmdbId,
+          mediaType: data.mediaType === 'tv' ? 'tv' : 'movie',
+          title: data.title || 'Saved title',
+          posterUrl: data.posterUrl || null,
+          releaseYear: data.releaseYear || null,
+          rating: data.rating || 0,
+          addedAt: data.addedAt?.toDate?.().toISOString?.() || data.addedAt,
+        };
+      });
+    } catch (err) {
+      console.warn('Firestore getWatchlist skipped:', err);
+      return [];
     }
   },
 

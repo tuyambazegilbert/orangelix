@@ -16,6 +16,7 @@ import {
   Newspaper,
   Music2,
   Moon,
+  Film,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -23,6 +24,7 @@ const primaryLinks = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/movies', label: 'Movies', icon: Compass },
   { to: '/series', label: 'TV Shows', icon: Tv },
+  { to: '/rw/movies', label: '🇷🇼 Rwanda Cinema', icon: Film },
   { to: '/trending', label: 'Trending', icon: Sparkles },
   { to: '/new', label: 'New Releases', icon: Moon },
   { to: '/favorites', label: 'My List', icon: Bookmark },

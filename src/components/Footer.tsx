@@ -73,7 +73,6 @@ export default function Footer() {
             <FooterLink to="/news">Cinema News</FooterLink>
             <FooterLink to="/music">Soundtracks</FooterLink>
             <FooterLink to="/books">Book Adaptations</FooterLink>
-            <FooterLink to="/collections/sci-fi-essentials">Sci-Fi Essentials</FooterLink>
           </nav>
         </div>
 

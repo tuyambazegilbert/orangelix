@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
-import { FirebaseData } from '@/lib/firebase-data';
+import { FirebaseData, LibraryItem } from '@/lib/firebase-data';
 import { MovieService } from '@/lib/movies';
 import {
   User,
@@ -65,10 +65,12 @@ export default function Profile() {
 
     try {
       // 1. Fetch Firestore data
-      const [fsHistory, fsRatings, fsPrefs] = await Promise.all([
+      const [fsHistory, fsRatings, fsPrefs, cloudFavorites, cloudWatchLater] = await Promise.all([
         FirebaseData.getWatchHistory(currentUser.id),
         FirebaseData.getUserRatings(currentUser.id),
         FirebaseData.getUserPreferences(currentUser.id),
+        FirebaseData.getFavorites(currentUser.id),
+        FirebaseData.getWatchlist(currentUser.id),
       ]);
 
       // 2. Fetch local favorites & watchlater
@@ -118,10 +120,32 @@ export default function Profile() {
         };
       });
 
+      const mapCloudLibrary = (item: LibraryItem): MediaItem => ({
+        id: item.contentId,
+        tmdbId: item.tmdbId || Number(item.contentId.replace(/\D/g, '')) || 0,
+        mediaType: item.mediaType,
+        title: item.title,
+        description: '',
+        posterUrl: item.posterUrl || null,
+        backdropUrl: null,
+        imageUrl: item.posterUrl || POSTER_FALLBACK,
+        rating: (item.rating || 0) / 2,
+        voteAverage: item.rating || 0,
+        voteCount: 0,
+        releaseDate: null,
+        releaseYear: item.releaseYear || null,
+        genres: [],
+        duration: null,
+      });
+      const mergeLibrary = (local: (MediaItem | Movie)[], cloud: LibraryItem[]) => {
+        const seen = new Set(local.map((item) => item.id));
+        return [...local, ...cloud.map(mapCloudLibrary).filter((item) => !seen.has(item.id))];
+      };
+
       setWatchHistory(fsHistory);
       setRatings(fsRatings);
-      setFavorites(mappedFavs);
-      setWatchLater(mappedWatchLater);
+      setFavorites(mergeLibrary(mappedFavs, cloudFavorites));
+      setWatchLater(mergeLibrary(mappedWatchLater, cloudWatchLater));
 
       if (fsPrefs) {
         setUserProfile((prev) => (prev ? { ...prev, preferences: fsPrefs } : prev));
@@ -192,6 +216,7 @@ export default function Profile() {
   const handleRemoveFavorite = (id: string) => {
     if (!currentUser) return;
     MovieService.removeFromFavorites(id, currentUser.id);
+    void FirebaseData.removeFavorites(currentUser.id, id);
     setFavorites((prev) => prev.filter((f) => f.id !== id));
     toast.success('Removed from favorites');
   };
@@ -202,6 +227,7 @@ export default function Profile() {
       mediaType: ('mediaType' in item ? item.mediaType : 'movie') as 'movie' | 'tv',
       cachedMedia: item,
     });
+    void FirebaseData.setWatchlist(currentUser.id, item);
     setWatchLater((prev) => (prev.some((w) => w.id === id) ? prev : [...prev, item]));
     toast.success('Added to Watch Later queue');
   };
@@ -209,6 +235,7 @@ export default function Profile() {
   const handleRemoveWatchLater = (id: string) => {
     if (!currentUser) return;
     MovieService.removeFromWatchLater(id, currentUser.id);
+    void FirebaseData.removeWatchlist(currentUser.id, id);
     setWatchLater((prev) => prev.filter((w) => w.id !== id));
   };
 
