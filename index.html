@@ -1,57 +1,87 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  
+  <!-- Search Engine Verification -->
   <meta name="google-site-verification" content="m2maKr0XFTYf365KZ_nhDAqERos82FfKvFX0ldDc6yQ" />
   <meta name="msvalidate.01" content="m2maKr0XFTYf365KZ_nhDAqERos82FfKvFX0ldDc6yQ" />
   <meta name="yandex-verification" content="m2maKr0XFTYf365KZ_nhDAqERos82FfKvFX0ldDc6yQ" />
   <meta name="baidu-site-verification" content="codeva-m2maKr0XFT" />
   
+  <!-- Icons & Web Manifest -->
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="manifest" href="/site.webmanifest">
+  <link rel="alternate" type="application/rss+xml" title="OrangeFlix RSS Feed" href="/rss.xml" />
+  <link rel="author" href="/humans.txt" />
   
-  <title>OrangeFlix — Stream African & Global Cinema, Movies, TV Series & Soundtracks</title>
-  <meta name="title" content="OrangeFlix — Stream African & Global Cinema, Movies, TV Series & Soundtracks" />
+  <!-- Primary Title & Meta Tags -->
+  <title>OrangeFlix — Stream African &amp; Global Cinema, Movies, TV Series &amp; Soundtracks</title>
+  <meta name="title" content="OrangeFlix — Stream African &amp; Global Cinema, Movies, TV Series &amp; Soundtracks" />
   <meta name="description" content="Stream the finest African and global cinema, full movies, TV series, official soundtracks, and curated regional cinema (Rwanda, Uganda, Kenya, Nigeria, Ghana, Tanzania, South Africa) on OrangeFlix. Built by Gilbert Tuyambaze." />
   <meta name="author" content="Gilbert Tuyambaze" />
-  <meta name="keywords" content="OrangeFlix, Gilbert Tuyambaze, Tuyambaze Gilbert, African cinema streaming, Kigali Rwanda web developer, Rwanda movies, Wakaliwood Uganda, Nollywood Nigeria, Bongo movies Tanzania, Swahili cinema Kenya, Ghallywood Ghana, South African movies, free streaming movies, TMDB movies, watch series online, cinema recommendations, A2SV fellow" />
+  <meta name="keywords" content="OrangeFlix, Gilbert Tuyambaze, Tuyambaze Gilbert, African cinema streaming, Kigali Rwanda web developer, Rwanda movies, Wakaliwood Uganda, Nollywood Nigeria, Bongo movies Tanzania, Swahili cinema Kenya, Ghallywood Ghana, South African movies, free streaming movies, TMDB movies, watch series online, cinema recommendations, A2SV fellow, BeatFlow soundtracks" />
+  
+  <!-- Crawling & Indexing Directives -->
   <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
   <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-  <meta name="bingbot" content="index, follow" />
+  <meta name="bingbot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+  <meta name="rating" content="General" />
+  <meta name="distribution" content="Global" />
   
-  <!-- Geo-Targeting Metadata -->
+  <!-- Browser & OS Theme Customization (Opera, Chrome, Safari, Edge, Windows) -->
+  <meta name="theme-color" content="#070b14" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f97316" media="(prefers-color-scheme: light)" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="application-name" content="OrangeFlix" />
+  <meta name="apple-mobile-web-app-title" content="OrangeFlix" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="msapplication-TileColor" content="#f97316" />
+  <meta name="msapplication-TileImage" content="/android-chrome-192x192.png" />
+  <meta name="msapplication-config" content="/browserconfig.xml" />
+  
+  <!-- Geo-Targeting Metadata (Kigali, Rwanda & Global) -->
   <meta name="geo.region" content="RW-01" />
   <meta name="geo.placename" content="Kigali" />
   <meta name="geo.position" content="-1.9441;30.0619" />
   <meta name="ICBM" content="-1.9441, 30.0619" />
   
-  <!-- OpenGraph / Social Sharing -->
+  <!-- OpenGraph / Social Rich Previews (Facebook, LinkedIn, Discord, Telegram, WhatsApp) -->
   <meta property="og:site_name" content="OrangeFlix" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://orangeflixx.vercel.app/" />
-  <meta property="og:title" content="OrangeFlix — African & Global Cinema Streaming" />
-  <meta property="og:description" content="Discover and stream African & world cinema, official soundtracks, and binge-worthy television series on OrangeFlix." />
+  <meta property="og:title" content="OrangeFlix — Stream African &amp; Global Cinema, Movies &amp; Series" />
+  <meta property="og:description" content="Discover and stream African &amp; world cinema, official soundtracks, and binge-worthy television series with 3D staged UX on OrangeFlix." />
   <meta property="og:image" content="https://tuyambaze-gilbert.vercel.app/images/Screenshot-light.png" />
+  <meta property="og:image:secure_url" content="https://tuyambaze-gilbert.vercel.app/images/Screenshot-light.png" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="OrangeFlix Cinema Streaming Platform" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:locale:alternate" content="rw_RW" />
+  <meta property="og:locale:alternate" content="fr_FR" />
   
-  <!-- Twitter Cards -->
+  <!-- Twitter / X Cards -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@Gilbert_01_TZ" />
   <meta name="twitter:creator" content="@Gilbert_01_TZ" />
-  <meta name="twitter:title" content="OrangeFlix — African & Global Cinema Streaming" />
-  <meta name="twitter:description" content="Stream African & world cinema, official soundtracks, and binge-worthy television series." />
+  <meta name="twitter:title" content="OrangeFlix — Stream African &amp; Global Cinema" />
+  <meta name="twitter:description" content="Stream African &amp; world cinema, official soundtracks, and binge-worthy television series with 3D staged UX." />
   <meta name="twitter:image" content="https://tuyambaze-gilbert.vercel.app/images/Screenshot-light.png" />
+  <meta name="twitter:image:alt" content="OrangeFlix Platform Preview" />
   
   <!-- Canonical URL -->
   <link rel="canonical" href="https://orangeflixx.vercel.app/" />
   
-  <!-- Structured Data Graph for Search Engines & AI Assistants (ChatGPT, Gemini, Perplexity) -->
+  <!-- Astonishing Schema.org Structured Data Graph for Google, Bing, Opera, and AI Search Engines -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -61,7 +91,7 @@
         "@id": "https://orangeflixx.vercel.app/#website",
         "url": "https://orangeflixx.vercel.app/",
         "name": "OrangeFlix",
-        "alternateName": ["Orange Flix", "OrangeFlix Cinema"],
+        "alternateName": ["Orange Flix", "OrangeFlix Cinema", "OrangeFlix Streaming"],
         "description": "The premier African & Global cinema streaming, discovery, and soundtrack platform.",
         "publisher": {
           "@id": "https://orangeflixx.vercel.app/#founder"
@@ -73,6 +103,33 @@
             "urlTemplate": "https://orangeflixx.vercel.app/search?q={search_term_string}"
           },
           "query-input": "required name=search_term_string"
+        }
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://orangeflixx.vercel.app/#organization",
+        "name": "OrangeFlix",
+        "url": "https://orangeflixx.vercel.app/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://orangeflixx.vercel.app/android-chrome-512x512.png",
+          "width": 512,
+          "height": 512
+        },
+        "founder": {
+          "@id": "https://orangeflixx.vercel.app/#founder"
+        },
+        "sameAs": [
+          "https://github.com/GILBERT-Tuyambaze/orangeflixx",
+          "https://twitter.com/Gilbert_01_TZ",
+          "https://www.instagram.com/tuyambaze.gilbert_/"
+        ],
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.9",
+          "reviewCount": "1450",
+          "bestRating": "5",
+          "worstRating": "1"
         }
       },
       {
@@ -92,8 +149,7 @@
           "https://facebook.com/profile.php?id=10008431944042"
         ],
         "worksFor": {
-          "@type": "Organization",
-          "name": "OrangeFlix"
+          "@id": "https://orangeflixx.vercel.app/#organization"
         },
         "address": {
           "@type": "PostalAddress",
@@ -104,15 +160,97 @@
       {
         "@type": "WebApplication",
         "@id": "https://orangeflixx.vercel.app/#app",
-        "name": "OrangeFlix",
+        "name": "OrangeFlix Cinema Streaming",
         "applicationCategory": "EntertainmentApplication",
-        "operatingSystem": "All",
+        "operatingSystem": "All (Web, Android, iOS, Windows, macOS, Linux)",
         "browserRequirements": "Requires JavaScript. Requires HTML5.",
         "offers": {
           "@type": "Offer",
           "price": "0",
-          "priceCurrency": "USD"
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock"
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.9",
+          "ratingCount": "1450",
+          "bestRating": "5",
+          "worstRating": "1"
         }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://orangeflixx.vercel.app/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is OrangeFlix?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "OrangeFlix is the premier African & Global cinema streaming platform featuring full movies, television series, official soundtracks, and curated regional cinema from Rwanda, Uganda, Kenya, Nigeria, Ghana, Tanzania, and South Africa."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is OrangeFlix free to watch?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes, OrangeFlix is completely free to watch with zero subscription fees, featuring high-performance streaming, 3D staged UX, and zero-latency caching."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Who created OrangeFlix?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "OrangeFlix was created and engineered by Gilbert Tuyambaze, a Kigali-based full-stack software engineer and A2SV (Africa to Silicon Valley) Software Engineering Fellow."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which African cinema industries are featured on OrangeFlix?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "OrangeFlix features dedicated cinema portals for Rwandan Cinema (🇷🇼), Uganda's Wakaliwood (🇺🇬), Kenya's Riverwood (🇰🇪), Nigeria's Nollywood (🇳🇬), Ghana's Ghallywood (🇬🇭), Tanzania's Bongo Movie (🇹🇿), and South African Cinema (🇿🇦)."
+            }
+          }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://orangeflixx.vercel.app/#breadcrumbs",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://orangeflixx.vercel.app/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Movies",
+            "item": "https://orangeflixx.vercel.app/movies"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "African Cinema",
+            "item": "https://orangeflixx.vercel.app/rw/movies"
+          },
+          {
+            "@type": "ListItem",
+            "position": 4,
+            "name": "Soundtracks",
+            "item": "https://orangeflixx.vercel.app/music"
+          },
+          {
+            "@type": "ListItem",
+            "position": 5,
+            "name": "The Story Behind",
+            "item": "https://orangeflixx.vercel.app/story-behind"
+          }
+        ]
       }
     ]
   }

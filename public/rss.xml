@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>OrangeFlix — African &amp; Global Cinema Updates</title>
+    <link>https://orangeflixx.vercel.app/</link>
+    <description>Latest cinema releases, movies, television series, and soundtrack updates on OrangeFlix. Built by Gilbert Tuyambaze.</description>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 30 Aug 2026 12:00:00 GMT</lastBuildDate>
+    <atom:link href="https://orangeflixx.vercel.app/rss.xml" rel="self" type="application/rss+xml"/>
+    
+    <item>
+      <title>African &amp; Global Cinema Discovery Engine 2.0</title>
+      <link>https://orangeflixx.vercel.app/rw/movies</link>
+      <guid>https://orangeflixx.vercel.app/rw/movies</guid>
+      <pubDate>Sun, 30 Aug 2026 12:00:00 GMT</pubDate>
+      <description>Discover curated films from Rwanda, Uganda (Wakaliwood), Kenya, Nigeria (Nollywood), Ghana, Tanzania, and South Africa with 3D staged UX and rate-limited YouTube indexing.</description>
+    </item>
+
+    <item>
+      <title>The Story Behind OrangeFlix — Built by Gilbert Tuyambaze</title>
+      <link>https://orangeflixx.vercel.app/story-behind</link>
+      <guid>https://orangeflixx.vercel.app/story-behind</guid>
+      <pubDate>Sun, 30 Aug 2026 10:00:00 GMT</pubDate>
+      <description>The journey, architectural vision, and engineering legacy behind OrangeFlix, created by Kigali-based full-stack developer and A2SV fellow Gilbert Tuyambaze.</description>
+    </item>
+
+    <item>
+      <title>Soundtrack Studio &amp; Audio Discovery Hub</title>
+      <link>https://orangeflixx.vercel.app/music</link>
+      <guid>https://orangeflixx.vercel.app/music</guid>
+      <pubDate>Sun, 30 Aug 2026 08:00:00 GMT</pubDate>
+      <description>Stream original cinema score albums, Apple Music previews, and waveform-visualized soundtrack releases.</description>
+    </item>
+  </channel>
+</rss>
+

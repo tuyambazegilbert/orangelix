@@ -1,0 +1,17 @@
+/* TEAM */
+Founder & Lead Architect: Gilbert Tuyambaze
+Role: Full-Stack Software Engineer & Web Designer
+Fellowship: A2SV (Africa to Silicon Valley) Fellow
+Location: Kigali, Rwanda
+Portfolio: https://tuyambaze-gilbert.vercel.app/
+Instagram: https://www.instagram.com/tuyambaze.gilbert_/
+GitHub: https://github.com/GILBERT-Tuyambaze/
+Email: tuyambazegilbert05@gmail.com
+
+/* SITE */
+Standards: HTML5, CSS3, ES2024, TypeScript, React, Tailwind CSS
+Components: Radix UI, Lucide Icons, Shadcn UI
+Backend & Services: Firebase Firestore, TMDB API, YouTube Data API v3
+Software: Vite, PostCSS, ESLint
+Language: English, Kinyarwanda, French, Spanish, Chinese
+

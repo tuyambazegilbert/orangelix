@@ -1,5 +1,5 @@
 # OrangeFlix Robots.txt
-# Optimized for Google, Bing, DuckDuckGo, Yandex, Baidu & AI Search Crawlers
+# Comprehensive Crawling Directives for Google, Bing, DuckDuckGo, Yandex, Baidu & AI Models
 
 User-agent: *
 Allow: /
@@ -32,7 +32,26 @@ Allow: /*/series
 Allow: /*/movies/*
 Allow: /*/watch/*
 
-# AI Search Assistants & Crawlers
+# Major Search Engine Bots
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+# AI Assistants & LLM Crawlers
 User-agent: GPTBot
 Allow: /
 
@@ -45,6 +64,9 @@ Allow: /
 User-agent: ClaudeBot
 Allow: /
 
+User-agent: anthropic-ai
+Allow: /
+
 User-agent: PerplexityBot
 Allow: /
 
@@ -54,7 +76,16 @@ Allow: /
 User-agent: CCBot
 Allow: /
 
-# Restricted Admin & Private Areas
+User-agent: Diffbot
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+# Restricted Admin & Private Routes
 Disallow: /admin
 Disallow: /admin/*
 Disallow: /profile
