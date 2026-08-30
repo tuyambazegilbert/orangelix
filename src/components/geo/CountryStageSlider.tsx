@@ -1,6 +1,6 @@
 /**
  * OrangeFlix Country-Specific 3D Stage Slider Hero
- * Features 3D carousel visible on both mobile and desktop with release dates and country switcher.
+ * Features 3D carousel staging visible on both mobile and desktop with release dates and country switcher.
  */
 
 import { KeyboardEvent, useEffect, useRef, useState, useMemo } from 'react';
@@ -31,9 +31,9 @@ const circularIndex = (index: number, length: number) => (index + length) % leng
 
 const stages = [
   { offset: -2, className: 'hidden xl:block xl:-translate-x-[190%] xl:scale-[.62] xl:opacity-30 xl:z-0' },
-  { offset: -1, className: 'hidden sm:block -translate-x-[70%] md:-translate-x-[102%] scale-[.75] md:scale-[.79] opacity-50 md:opacity-60 z-10' },
+  { offset: -1, className: '-translate-x-[64%] sm:-translate-x-[72%] md:-translate-x-[102%] scale-[.72] sm:scale-[.76] md:scale-[.79] opacity-45 sm:opacity-55 md:opacity-60 z-10' },
   { offset: 0, className: 'translate-x-0 scale-100 opacity-100 z-30 ring-1 ring-orange-400/80 shadow-[0_18px_44px_rgba(0,0,0,.62)]' },
-  { offset: 1, className: 'hidden sm:block translate-x-[70%] md:translate-x-[102%] scale-[.75] md:scale-[.79] opacity-50 md:opacity-60 z-10' },
+  { offset: 1, className: 'translate-x-[64%] sm:translate-x-[72%] md:translate-x-[102%] scale-[.72] sm:scale-[.76] md:scale-[.79] opacity-45 sm:opacity-55 md:opacity-60 z-10' },
   { offset: 2, className: 'hidden xl:block xl:translate-x-[190%] xl:scale-[.62] xl:opacity-30 xl:z-0' },
 ];
 
@@ -66,14 +66,14 @@ export default function CountryStageSlider({
   if (!count) {
     const t = getGeoTranslations(language);
     return (
-      <section className="relative mx-auto max-w-[1600px] overflow-hidden border-b border-white/[.07] bg-[#080b12] px-5 py-12 sm:px-10">
+      <section className="relative mx-auto max-w-[1600px] overflow-hidden border-b border-white/[.07] bg-[#080b12] px-4 py-8 sm:px-10">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <div className="flex items-center gap-2">
               <span className="text-2xl" role="img" aria-label={country.name}>{country.flagEmoji}</span>
               <p className="section-eyebrow text-orange-400">{country.name} Cinema</p>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
+            <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-5xl">
               {t.watchMovies(country.name)}
             </h1>
             <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
@@ -82,9 +82,9 @@ export default function CountryStageSlider({
           </div>
 
           {/* Country Switcher */}
-          <div className="flex items-center gap-2 shrink-0 bg-black/40 backdrop-blur-xl p-2.5 rounded-2xl border border-white/10">
+          <div className="flex items-center gap-2 shrink-0 bg-black/40 backdrop-blur-xl p-2 rounded-xl border border-white/10">
             <Select value={country.countryCode} onValueChange={onCountryChange}>
-              <SelectTrigger className="w-[140px] bg-gray-900/80 border-gray-700 text-xs text-white h-8">
+              <SelectTrigger className="w-[130px] sm:w-[140px] bg-gray-900/80 border-gray-700 text-xs text-white h-8">
                 <SelectValue placeholder="Country" />
               </SelectTrigger>
               <SelectContent className="bg-gray-900 border-gray-800 text-white">
@@ -146,9 +146,9 @@ export default function CountryStageSlider({
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,10,17,.92)_0%,rgba(7,10,17,.80)_35%,rgba(7,10,17,.30)_70%,rgba(7,10,17,.72)_100%),linear-gradient(0deg,rgba(7,10,17,.85)_0%,transparent_62%)]" />
 
       {/* Top Floating Country Switcher */}
-      <div className="absolute top-3 right-3 sm:right-6 z-40 flex items-center gap-2 bg-black/60 backdrop-blur-xl p-1.5 rounded-xl border border-white/10 shadow-xl">
+      <div className="absolute top-2.5 right-2.5 sm:right-6 z-40 flex items-center gap-2 bg-black/60 backdrop-blur-xl p-1 rounded-xl border border-white/10 shadow-xl">
         <Select value={country.countryCode} onValueChange={onCountryChange}>
-          <SelectTrigger className="w-[125px] sm:w-[140px] bg-gray-950/80 border-gray-700/80 text-xs text-white h-7 sm:h-8">
+          <SelectTrigger className="w-[120px] sm:w-[140px] bg-gray-950/80 border-gray-700/80 text-xs text-white h-7 sm:h-8">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-gray-900 border-gray-800 text-white">
@@ -161,8 +161,8 @@ export default function CountryStageSlider({
         </Select>
       </div>
 
-      {/* Main Grid Content Area: Visible 3D Cards on ALL screen sizes */}
-      <div className="relative grid min-h-[380px] sm:min-h-[460px] grid-cols-1 gap-4 px-4 py-5 sm:px-8 md:min-h-[500px] md:grid-cols-[minmax(265px,.64fr)_minmax(620px,1.36fr)] md:items-center md:gap-6 md:px-[clamp(2rem,5vw,5rem)] lg:h-[520px] lg:min-h-0">
+      {/* Main Grid Content Area: 3D Cards Staging on ALL screen sizes */}
+      <div className="relative grid min-h-[380px] sm:min-h-[460px] grid-cols-1 gap-4 px-4 py-4 sm:px-8 md:min-h-[500px] md:grid-cols-[minmax(265px,.64fr)_minmax(620px,1.36fr)] md:items-center md:gap-6 md:px-[clamp(2rem,5vw,5rem)] lg:h-[520px] lg:min-h-0">
         {/* Left Column Text & Details */}
         <div className="z-30 max-w-md md:pb-4 space-y-2">
           <div className="flex items-center gap-1.5">
@@ -237,8 +237,8 @@ export default function CountryStageSlider({
           </div>
         </div>
 
-        {/* Right Column: 3D Stage Carousel Cards (Visible & Scaled on Mobile) */}
-        <div className="relative flex h-[260px] sm:h-[360px] md:h-[440px] items-center justify-center">
+        {/* Right Column: 3D Stage Carousel Cards (Visible & Staged on Mobile) */}
+        <div className="relative flex h-[240px] sm:h-[360px] md:h-[440px] items-center justify-center overflow-hidden sm:overflow-visible">
           {stages.map(({ offset, className }) => {
             const item = featuredItems[circularIndex(active + offset, count)];
             const current = offset === 0;
@@ -252,8 +252,8 @@ export default function CountryStageSlider({
                 onClick={() => setActive(circularIndex(active + offset, count))}
                 onMouseEnter={current ? () => setPaused(true) : undefined}
                 onMouseLeave={current ? () => setPaused(false) : undefined}
-                className={`absolute h-[220px] w-[150px] sm:h-[300px] sm:w-[200px] md:h-[320px] md:w-[214px] overflow-hidden rounded-xl border border-white/[.12] bg-[#101724] text-left transition-[transform,opacity,filter] duration-500 ease-out ${className} ${
-                  current ? 'h-[250px] w-[170px] sm:h-[370px] sm:w-[250px] md:h-[405px] md:w-[270px]' : 'hover:opacity-90'
+                className={`absolute h-[190px] w-[130px] sm:h-[300px] sm:w-[200px] md:h-[320px] md:w-[214px] overflow-hidden rounded-xl border border-white/[.12] bg-[#101724] text-left transition-[transform,opacity,filter] duration-500 ease-out ${className} ${
+                  current ? 'h-[225px] w-[155px] sm:h-[370px] sm:w-[250px] md:h-[405px] md:w-[270px]' : 'hover:opacity-90'
                 }`}
                 aria-current={current ? 'true' : undefined}
                 aria-label={`Show ${item.title}`}

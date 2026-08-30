@@ -155,18 +155,18 @@ export default function MovieDetail() {
         })}
       />
 
-      {/* Backdrop Hero */}
-      <div className="relative h-[36vh] sm:h-[50vh] md:h-[65vh] min-h-[220px] sm:min-h-[360px] md:min-h-[480px] w-full overflow-hidden">
+      {/* Backdrop Hero: Immersive and compact on mobile */}
+      <div className="relative h-[28vh] sm:h-[50vh] md:h-[65vh] min-h-[160px] sm:min-h-[360px] md:min-h-[480px] w-full overflow-hidden">
         <img
           src={movie.backdropUrl || BACKDROP_FALLBACK}
           alt={movie.title}
           className="w-full h-full object-cover object-center scale-105 filter blur-[1px] brightness-50"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/60 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/70 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-gray-950 via-transparent to-transparent" />
       </div>
 
-      <div className="page-wrap -mt-20 sm:-mt-44 md:-mt-72 relative z-10 space-y-8 sm:space-y-12 pb-16">
+      <div className="page-wrap !pt-2 -mt-16 sm:-mt-44 md:-mt-72 relative z-10 space-y-6 sm:space-y-12 pb-16">
         <Breadcrumbs
           items={[
             { name: 'Movies', url: '/movies' },
@@ -178,9 +178,9 @@ export default function MovieDetail() {
         />
 
         {/* Main Details Layout */}
-        <div className="flex flex-col md:flex-row gap-8 items-start">
+        <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-center md:items-start">
           {/* Poster Card */}
-          <div className="w-64 md:w-72 lg:w-80 shrink-0 mx-auto md:mx-0 rounded-2xl overflow-hidden shadow-2xl border border-orange-500/20 bg-gray-900 group">
+          <div className="w-48 sm:w-64 md:w-72 lg:w-80 shrink-0 mx-auto md:mx-0 rounded-2xl overflow-hidden shadow-2xl border border-orange-500/20 bg-gray-900 group">
             <img
               src={movie.posterUrl || POSTER_FALLBACK}
               alt={movie.title}

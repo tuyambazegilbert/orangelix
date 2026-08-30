@@ -12,9 +12,9 @@ const watchPath = (item: MediaItem) => `/watch/${item.mediaType}-${item.tmdbId}`
 
 const stages = [
   { offset: -2, className: 'hidden xl:block xl:-translate-x-[190%] xl:scale-[.62] xl:opacity-30 xl:z-0' },
-  { offset: -1, className: 'hidden sm:block -translate-x-[70%] md:-translate-x-[102%] scale-[.75] md:scale-[.79] opacity-50 md:opacity-60 z-10' },
+  { offset: -1, className: '-translate-x-[64%] sm:-translate-x-[72%] md:-translate-x-[102%] scale-[.72] sm:scale-[.76] md:scale-[.79] opacity-45 sm:opacity-55 md:opacity-60 z-10' },
   { offset: 0, className: 'translate-x-0 scale-100 opacity-100 z-30 ring-1 ring-orange-400/80 shadow-[0_18px_44px_rgba(0,0,0,.62)]' },
-  { offset: 1, className: 'hidden sm:block translate-x-[70%] md:translate-x-[102%] scale-[.75] md:scale-[.79] opacity-50 md:opacity-60 z-10' },
+  { offset: 1, className: 'translate-x-[64%] sm:translate-x-[72%] md:translate-x-[102%] scale-[.72] sm:scale-[.76] md:scale-[.79] opacity-45 sm:opacity-55 md:opacity-60 z-10' },
   { offset: 2, className: 'hidden xl:block xl:translate-x-[190%] xl:scale-[.62] xl:opacity-30 xl:z-0' },
 ];
 
@@ -64,13 +64,13 @@ export default function StageSlider({ items }: StageSliderProps) {
       />
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,10,17,.92)_0%,rgba(7,10,17,.80)_35%,rgba(7,10,17,.30)_70%,rgba(7,10,17,.72)_100%),linear-gradient(0deg,rgba(7,10,17,.85)_0%,transparent_62%)]" />
 
-      {/* Main Grid: Card Slide visible on ALL screens (including mobile) */}
-      <div className="relative grid min-h-[380px] sm:min-h-[460px] grid-cols-1 gap-4 px-4 py-5 sm:px-8 md:min-h-[500px] md:grid-cols-[minmax(265px,.64fr)_minmax(620px,1.36fr)] md:items-center md:gap-6 md:px-[clamp(2rem,5vw,5rem)] lg:h-[520px] lg:min-h-0">
+      {/* Main Grid: Card Staging visible on ALL screens (including mobile) */}
+      <div className="relative grid min-h-[380px] sm:min-h-[460px] grid-cols-1 gap-4 px-4 py-4 sm:px-8 md:min-h-[500px] md:grid-cols-[minmax(265px,.64fr)_minmax(620px,1.36fr)] md:items-center md:gap-6 md:px-[clamp(2rem,5vw,5rem)] lg:h-[520px] lg:min-h-0">
         
         {/* Text & Quick Actions */}
         <div className="z-30 max-w-md md:pb-4 space-y-2">
           <p className="section-eyebrow mb-1">OrangeFlix original</p>
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black uppercase leading-[.92] tracking-[-.045em] text-white">
+          <h1 className="text-2xl sm:text-5xl lg:text-6xl font-black uppercase leading-[.92] tracking-[-.045em] text-white">
             {featured.title}
           </h1>
 
@@ -130,8 +130,8 @@ export default function StageSlider({ items }: StageSliderProps) {
           </div>
         </div>
 
-        {/* 3D Stage Carousel Cards: Visible & Scaled for Mobile & Desktop */}
-        <div className="relative flex h-[260px] sm:h-[360px] md:h-[440px] items-center justify-center">
+        {/* 3D Stage Carousel Cards: Left, Center & Right Cards Staged for Mobile & Desktop */}
+        <div className="relative flex h-[240px] sm:h-[360px] md:h-[440px] items-center justify-center overflow-hidden sm:overflow-visible">
           {stages.map(({ offset, className }) => {
             const item = items[circularIndex(active + offset, count)];
             const current = offset === 0;
@@ -143,8 +143,8 @@ export default function StageSlider({ items }: StageSliderProps) {
                 onClick={() => setActive(circularIndex(active + offset, count))}
                 onMouseEnter={current ? () => setPaused(true) : undefined}
                 onMouseLeave={current ? () => setPaused(false) : undefined}
-                className={`absolute h-[220px] w-[150px] sm:h-[300px] sm:w-[200px] md:h-[320px] md:w-[214px] overflow-hidden rounded-xl border border-white/[.12] bg-[#101724] text-left transition-[transform,opacity,filter] duration-500 ease-out ${className} ${
-                  current ? 'h-[250px] w-[170px] sm:h-[370px] sm:w-[250px] md:h-[405px] md:w-[270px]' : 'hover:opacity-90'
+                className={`absolute h-[190px] w-[130px] sm:h-[300px] sm:w-[200px] md:h-[320px] md:w-[214px] overflow-hidden rounded-xl border border-white/[.12] bg-[#101724] text-left transition-[transform,opacity,filter] duration-500 ease-out ${className} ${
+                  current ? 'h-[225px] w-[155px] sm:h-[370px] sm:w-[250px] md:h-[405px] md:w-[270px]' : 'hover:opacity-90'
                 }`}
                 aria-current={current ? 'true' : undefined}
                 aria-label={`Show ${item.title}`}

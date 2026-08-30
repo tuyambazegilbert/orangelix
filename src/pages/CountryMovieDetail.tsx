@@ -318,7 +318,7 @@ export default function CountryMovieDetail() {
         ]}
       />
 
-      <div className="page-wrap py-4 max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
+      <div className="page-wrap !pt-2 sm:!pt-4 max-w-6xl mx-auto px-3 sm:px-6 space-y-4 sm:space-y-6">
         {/* Navigation & Country Location Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <Button
