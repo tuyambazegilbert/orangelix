@@ -1,7 +1,7 @@
 /**
  * OrangeFlix Country Movie Detail & Official YouTube Player Page
  * Route: /:countryCode/movies/:slug and /:countryCode/watch/:id
- * Plays official YouTube embed with full Watchlist, 5-Star Ratings & Community Reviews.
+ * Plays official YouTube embed with full Series Episodes Navigator, Watchlist, 5-Star Ratings & Community Reviews.
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -41,6 +41,7 @@ import {
   Send,
   Globe,
   User,
+  Play,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -59,6 +60,7 @@ export default function CountryMovieDetail() {
   const { currentUser } = useAuth();
 
   const [movie, setMovie] = useState<GeoContentItem | null>(null);
+  const [seriesEpisodes, setSeriesEpisodes] = useState<GeoContentItem[]>([]);
   const [related, setRelated] = useState<GeoContentItem[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -112,6 +114,13 @@ export default function CountryMovieDetail() {
           entityType: item.classification || item.contentType,
           entityId: item.youtubeVideoId,
           entityTitle: item.title,
+        });
+
+        // Load all episodes if series/channel
+        void GeoContentService.getSeriesEpisodes(item).then((eps) => {
+          if (isMounted) {
+            setSeriesEpisodes(eps);
+          }
         });
 
         // Load related local movies
@@ -184,7 +193,7 @@ export default function CountryMovieDetail() {
 
   const handleWatchLaterToggle = () => {
     if (!currentUser || !movie) {
-      toast.info('Please sign in to add to your Watchlist');
+      toast.info('Please sign in to save to your Watchlist');
       return;
     }
 
@@ -213,31 +222,33 @@ export default function CountryMovieDetail() {
   const handleSubmitReview = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !movie) {
-      toast.info('Please sign in to submit a rating & review');
+      toast.info('Please sign in to submit a review');
       return;
     }
-
     if (!commentText.trim()) {
-      toast.error('Please write a review comment');
+      toast.error('Please enter a comment for your review');
       return;
     }
 
     setIsSubmittingReview(true);
     try {
       const mid = `geo-${movie.id || movie.youtubeVideoId}`;
-      const newRev = MovieService.addReview({
-        movieId: mid,
+      const newReview: Review = {
+        id: `rev-${Date.now()}`,
         userId: currentUser.id,
-        userName: currentUser.name || 'Anonymous Viewer',
+        userName: currentUser.name || 'OrangeFlix Viewer',
+        movieId: mid,
         rating: userRating,
         comment: commentText.trim(),
-      });
+        createdAt: new Date().toISOString(),
+      };
 
-      setReviews([newRev, ...reviews]);
+      MovieService.addReview(newReview);
+      setReviews((prev) => [newReview, ...prev]);
       setCommentText('');
-      toast.success('Review submitted successfully!');
+      toast.success('Thank you! Your review has been posted.');
     } catch {
-      toast.error('Failed to submit review');
+      toast.error('Failed to submit review. Please try again.');
     } finally {
       setIsSubmittingReview(false);
     }
@@ -245,25 +256,25 @@ export default function CountryMovieDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white page-wrap py-10">
-        <div className="max-w-6xl mx-auto space-y-6 animate-pulse px-4">
-          <div className="h-6 w-64 bg-gray-800 rounded" />
-          <div className="aspect-video w-full bg-gray-900 rounded-3xl border border-gray-800" />
-          <div className="h-8 w-1/2 bg-gray-800 rounded" />
-          <div className="h-20 w-full bg-gray-900 rounded-xl" />
+      <div className="min-h-screen bg-[#070b14] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto" />
+          <p className="text-sm text-gray-400 font-medium">Loading {country.name} Cinema...</p>
         </div>
       </div>
     );
   }
 
-  if (!movie || isUnavailable) {
+  if (!movie) {
     return (
-      <div className="min-h-[70vh] bg-gray-950 text-white grid place-items-center text-center p-6">
-        <div className="space-y-4 max-w-md bg-gray-900/60 border border-gray-800 p-8 rounded-3xl backdrop-blur-xl">
-          <AlertCircle className="w-12 h-12 text-orange-400 mx-auto" />
-          <h2 className="text-2xl font-bold">Stream Unavailable</h2>
+      <div className="min-h-screen bg-[#070b14] flex items-center justify-center p-4">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="w-16 h-16 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <h1 className="text-xl font-bold text-white">Cinema Title Not Found</h1>
           <p className="text-sm text-gray-400">
-            This YouTube video has been made private, removed, or is no longer embeddable by its creator.
+            This {country.name} movie or series could not be found or has not yet been discovered on YouTube.
           </p>
           <Button asChild className="bg-orange-500 hover:bg-orange-600">
             <Link to={`/${countryCode.toLowerCase()}/movies`}>
@@ -275,58 +286,64 @@ export default function CountryMovieDetail() {
     );
   }
 
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${movie.youtubeVideoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1`;
-  const youtubeWatchUrl = movie.youtubeUrl || `https://www.youtube.com/watch?v=${movie.youtubeVideoId}`;
-
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${movie.youtubeVideoId}?autoplay=1&rel=0&modestbranding=1`;
+  const youtubeWatchUrl = `https://www.youtube.com/watch?v=${movie.youtubeVideoId}`;
+  const classification = movie.classification || movie.contentType || 'movie';
+  const views = movie.views ?? movie.viewCount ?? 0;
   const formattedDate = movie.publishedAt
-    ? new Date(movie.publishedAt).toLocaleDateString(undefined, {
+    ? new Date(movie.publishedAt).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
       })
-    : 'Recent';
+    : 'Recently';
 
-  const views = movie.views ?? movie.viewCount ?? 0;
-  const score = movie.score ?? movie.classificationScore ?? 0;
-  const classification = movie.classification || movie.contentType || 'movie';
-
-  // Average review calculation
-  const totalReviewRating = reviews.reduce((sum, r) => sum + r.rating, 0);
-  const avgRating = reviews.length > 0 ? (totalReviewRating / reviews.length).toFixed(1) : (score >= 70 ? '4.8' : '4.5');
+  const avgRating = reviews.length > 0
+    ? (reviews.reduce((acc, r) => acc + (r.rating || 5), 0) / reviews.length).toFixed(1)
+    : '4.8';
 
   return (
-    <div className="min-h-screen bg-[#080b12] text-white">
+    <div className="min-h-screen bg-[#070b14] text-white">
       <SEOHead
-        title={`${movie.title} — Watch on OrangeFlix`}
-        description={movie.description}
+        title={`${movie.title} — Watch Online (${country.name} Cinema)`}
+        description={movie.description || `Stream ${movie.title} from ${country.name} directly on OrangeFlix.`}
+        url={`https://orangeflixx.vercel.app/${countryCode.toLowerCase()}/movies/${movie.slug || movie.id}`}
         image={movie.thumbnail || movie.thumbnailUrl}
-        url={`https://orangeflixx.vercel.app/${countryCode.toLowerCase()}/movies/${movie.slug}`}
       />
 
-      <div className="page-wrap py-6 max-w-6xl mx-auto px-4 sm:px-6 space-y-8">
-        {/* Navigation Breadcrumbs & Country Location Switcher */}
+      <Breadcrumbs
+        items={[
+          { name: `${country.name} Cinema`, url: `/${countryCode.toLowerCase()}/movies` },
+          { name: movie.title, url: `/${countryCode.toLowerCase()}/movies/${movie.slug}` },
+        ]}
+      />
+
+      <div className="page-wrap py-4 max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
+        {/* Navigation & Country Location Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <Breadcrumbs
-            items={[
-              { name: `${country.name} Cinema`, url: `/${countryCode.toLowerCase()}/movies` },
-              { name: movie.title, url: `/${countryCode.toLowerCase()}/movies/${movie.slug}` },
-            ]}
-          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(-1)}
+            className="text-xs text-gray-400 hover:text-white self-start"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
+          </Button>
 
           {/* Quick Territory Switcher */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400 flex items-center gap-1">
               <Globe className="w-3 h-3 text-orange-400" /> Switch Cinema:
             </span>
-            <div className="flex items-center gap-1 overflow-x-auto">
-              {allCountries.slice(0, 5).map((c) => (
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-[260px] sm:max-w-none scrollbar-none">
+              {allCountries.map((c) => (
                 <button
                   key={c.countryCode}
                   onClick={() => navigate(`/${c.countryCode.toLowerCase()}/movies`)}
-                  className={`text-xs px-2 py-0.5 rounded-lg border transition ${
-                    c.countryCode === countryCode
-                      ? 'bg-orange-500 text-white border-orange-500 font-bold'
-                      : 'bg-gray-900 border-gray-800 text-gray-300 hover:text-white'
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold shrink-0 transition ${
+                    c.countryCode.toUpperCase() === countryCode
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-900 text-gray-400 hover:text-white border border-gray-800'
                   }`}
                 >
                   {c.flagEmoji} {c.countryCode}
@@ -337,7 +354,7 @@ export default function CountryMovieDetail() {
         </div>
 
         {/* Embedded Official YouTube Player */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-black shadow-2xl shadow-black/80 aspect-video w-full">
+        <section className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/15 bg-black shadow-2xl shadow-black/80 aspect-video w-full">
           <iframe
             src={embedUrl}
             title={movie.title}
@@ -348,10 +365,10 @@ export default function CountryMovieDetail() {
         </section>
 
         {/* Title, Badges & Actions Bar */}
-        <section className="space-y-6">
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-            <div className="space-y-3 max-w-3xl">
-              <div className="flex flex-wrap items-center gap-2.5">
+        <section className="space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+            <div className="space-y-2 max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge className="bg-black/70 backdrop-blur-md text-xs border border-white/15 text-white">
                   {country.flagEmoji} {country.name} Cinema
                 </Badge>
@@ -377,25 +394,25 @@ export default function CountryMovieDetail() {
                 </div>
               </div>
 
-              <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight leading-tight">
+              <h1 className="text-xl sm:text-3xl font-black text-white tracking-tight leading-tight">
                 {movie.title}
               </h1>
 
-              {/* Meta stats bar */}
-              <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-gray-400 pt-1">
-                <span className="flex items-center gap-1.5 font-mono text-white">
-                  <Clock className="w-4 h-4 text-orange-400" />
+              {/* Meta stats bar with Release Date */}
+              <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-400 pt-0.5">
+                <span className="flex items-center gap-1 font-mono text-white">
+                  <Clock className="w-3.5 h-3.5 text-orange-400" />
                   {movie.durationFormatted}
                 </span>
                 <span>•</span>
-                <span className="flex items-center gap-1.5">
-                  <Eye className="w-4 h-4 text-gray-500" />
+                <span className="flex items-center gap-1">
+                  <Eye className="w-3.5 h-3.5 text-gray-500" />
                   {views.toLocaleString()} {t.views}
                 </span>
                 <span>•</span>
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-gray-500" />
-                  {formattedDate}
+                <span className="flex items-center gap-1 font-medium text-slate-300">
+                  <Calendar className="w-3.5 h-3.5 text-orange-400" />
+                  Released: {formattedDate}
                 </span>
                 <span>•</span>
                 <span className="text-orange-400 font-medium">
@@ -444,31 +461,84 @@ export default function CountryMovieDetail() {
                 {isCopied ? 'Copied!' : t.share}
               </Button>
 
-              <a
-                href={youtubeWatchUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors shadow-md shadow-red-600/20 h-9"
-              >
-                <Youtube className="w-3.5 h-3.5" />
-                YouTube
-                <ExternalLink className="w-3 h-3 ml-0.5" />
-              </a>
+              
             </div>
           </div>
 
+          {/* ALL SERIES EPISODES / EPISODES PLAYLIST (WHEN MULTIPLE EPISODES AVAILABLE) */}
+          {seriesEpisodes.length > 1 && (
+            <section className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                    <Tv className="w-3.5 h-3.5" /> Series Episodes & Playlist
+                  </p>
+                  <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                    All Episodes ({seriesEpisodes.length})
+                  </h2>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {seriesEpisodes.map((ep, idx) => {
+                  const isCurrent = ep.id === movie.id || ep.youtubeVideoId === movie.youtubeVideoId;
+                  const epUrl = `/${countryCode.toLowerCase()}/movies/${ep.slug || ep.youtubeVideoId || ep.id}`;
+                  const epThumb = ep.thumbnail || ep.thumbnailUrl || `https://img.youtube.com/vi/${ep.youtubeVideoId}/hqdefault.jpg`;
+                  const epDate = ep.publishedAt ? new Date(ep.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+                  return (
+                    <Link
+                      key={ep.id}
+                      to={epUrl}
+                      className={`group block p-2.5 rounded-2xl border transition-all duration-200 ${
+                        isCurrent
+                          ? 'bg-orange-500/15 border-orange-500/60 shadow-lg shadow-orange-500/10 scale-[1.01]'
+                          : 'bg-gray-900/60 border-gray-800/80 hover:border-orange-500/40 hover:bg-gray-900/90'
+                      }`}
+                    >
+                      <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-950 mb-2">
+                        <img src={epThumb} alt={ep.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono text-white">
+                          <span className="bg-black/80 backdrop-blur px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px]">
+                            <Clock className="w-2.5 h-2.5 text-orange-400" /> {ep.durationFormatted}
+                          </span>
+                          {isCurrent ? (
+                            <Badge className="bg-orange-500 text-white text-[9px] px-1.5 py-0">Now Playing</Badge>
+                          ) : (
+                            <span className="bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-gray-300">Ep {idx + 1}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <h3 className={`text-xs font-bold line-clamp-2 leading-snug ${isCurrent ? 'text-orange-400' : 'text-white group-hover:text-orange-300'}`}>
+                          {ep.title}
+                        </h3>
+                        <div className="flex items-center justify-between text-[10px] text-gray-400">
+                          <span className="truncate max-w-[120px]">{ep.channelTitle}</span>
+                          <span>{epDate}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Description Card */}
           <Card className="bg-gray-900/50 border-gray-800/80 backdrop-blur-xl rounded-2xl">
-            <CardContent className="p-6 space-y-3">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400">Synopsis & Details</h3>
-              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+            <CardContent className="p-5 space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400">Synopsis & Details</h3>
+              <p className="text-xs sm:text-sm text-gray-300 leading-relaxed whitespace-pre-line">
                 {movie.description || 'No description provided for this stream.'}
               </p>
 
               {movie.tags && movie.tags.length > 0 && (
-                <div className="pt-3 border-t border-gray-800/60 flex flex-wrap items-center gap-1.5">
+                <div className="pt-2 border-t border-gray-800/60 flex flex-wrap items-center gap-1.5">
                   {movie.tags.slice(0, 8).map((tag, idx) => (
-                    <Badge key={idx} variant="secondary" className="bg-black/50 text-[11px] text-gray-400 border border-white/5">
+                    <Badge key={idx} variant="secondary" className="bg-black/50 text-[10px] text-gray-400 border border-white/5">
                       #{tag}
                     </Badge>
                   ))}
@@ -479,19 +549,19 @@ export default function CountryMovieDetail() {
         </section>
 
         {/* COMMUNITY RATINGS & REVIEWS SECTION */}
-        <section className="space-y-6 pt-6 border-t border-gray-800/60">
+        <section className="space-y-5 pt-4 border-t border-gray-800/60">
           <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-orange-400" />
+            <div className="space-y-0.5">
+              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-orange-400" />
                 Viewer Reviews & Ratings ({reviews.length})
               </h2>
               <p className="text-xs text-gray-400">
-                Rate this {country.name} movie and share your thoughts with the community.
+                Rate this {country.name} title and share your thoughts with the community.
               </p>
             </div>
 
-            <div className="flex items-center gap-1 bg-gray-900/80 border border-gray-800 px-3 py-1.5 rounded-xl text-xs">
+            <div className="flex items-center gap-1 bg-gray-900/80 border border-gray-800 px-2.5 py-1 rounded-xl text-xs">
               <span className="text-gray-400">Avg Rating:</span>
               <span className="font-bold text-amber-400 font-mono flex items-center gap-1">
                 <Star className="w-3.5 h-3.5 fill-current" /> {avgRating} / 5
@@ -501,7 +571,7 @@ export default function CountryMovieDetail() {
 
           {/* Add Review Form */}
           <Card className="bg-gray-900/40 border-gray-800/80 rounded-2xl">
-            <CardContent className="p-5 space-y-4">
+            <CardContent className="p-4 space-y-3">
               <form onSubmit={handleSubmitReview} className="space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5">
@@ -518,7 +588,7 @@ export default function CountryMovieDetail() {
                           aria-label={`Rate ${star} stars`}
                         >
                           <Star
-                            className={`w-5 h-5 ${
+                            className={`w-4 h-4 ${
                               (hoverRating || userRating) >= star
                                 ? 'fill-amber-400 text-amber-400'
                                 : 'text-gray-600'
@@ -527,31 +597,25 @@ export default function CountryMovieDetail() {
                         </button>
                       ))}
                     </div>
-                    <span className="text-xs font-mono font-bold text-amber-400 ml-1">
-                      {userRating} / 5
-                    </span>
                   </div>
 
-                  {!currentUser && (
-                    <span className="text-xs text-amber-400">
-                      Sign in to post reviews with your profile name
-                    </span>
-                  )}
+                  <span className="text-xs text-gray-400">
+                    Posting as: <strong className="text-white">{currentUser ? currentUser.name || 'You' : 'Guest'}</strong>
+                  </span>
                 </div>
 
                 <Textarea
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
-                  placeholder="What did you think of this movie? Write your review..."
-                  rows={3}
-                  className="bg-gray-950 border-gray-800 text-xs text-white placeholder:text-gray-500 rounded-xl focus:border-orange-500 resize-none"
+                  placeholder={`Write your review about "${movie.title}"...`}
+                  className="bg-gray-950 border-gray-800 text-xs text-white resize-none rounded-xl focus:border-orange-500 min-h-[70px]"
                 />
 
                 <div className="flex justify-end">
                   <Button
                     type="submit"
                     disabled={isSubmittingReview || !commentText.trim()}
-                    className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold px-4 h-9 rounded-xl shadow-md shadow-orange-500/20"
+                    className="bg-orange-500 hover:bg-orange-600 text-white text-xs h-8 px-4 rounded-xl shadow-md shadow-orange-500/20"
                   >
                     <Send className="w-3.5 h-3.5 mr-1.5" />
                     Submit Review
@@ -561,70 +625,80 @@ export default function CountryMovieDetail() {
             </CardContent>
           </Card>
 
-          {/* Review List */}
-          <div className="space-y-3">
+          {/* Reviews List */}
+          <div className="space-y-2.5">
             {reviews.length === 0 ? (
-              <p className="text-xs text-gray-500 italic text-center py-6">
-                Be the first viewer to review this {country.name} movie!
-              </p>
+              <div className="text-center py-6 bg-gray-900/20 rounded-2xl border border-gray-800/40 p-4">
+                <MessageSquare className="w-6 h-6 text-gray-600 mx-auto mb-1.5" />
+                <p className="text-xs text-gray-400 font-medium">Be the first to review this {country.name} movie!</p>
+              </div>
             ) : (
               reviews.map((rev) => (
-                <div
-                  key={rev.id}
-                  className="p-4 rounded-xl bg-gray-900/30 border border-gray-800/60 space-y-2"
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-[10px] font-bold text-white">
-                        {rev.userName?.[0]?.toUpperCase() || 'U'}
+                <Card key={rev.id} className="bg-gray-900/30 border-gray-800/60 rounded-xl">
+                  <CardContent className="p-3.5 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-xs">
+                          <User className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-white">{rev.userName || 'OrangeFlix Viewer'}</p>
+                          <p className="text-[10px] text-gray-500">
+                            {new Date(rev.createdAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </p>
+                        </div>
                       </div>
-                      <span className="font-bold text-white">{rev.userName}</span>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-0.5 text-amber-400">
-                        {[...Array(5)].map((_, i) => (
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((s) => (
                           <Star
-                            key={i}
+                            key={s}
                             className={`w-3 h-3 ${
-                              i < rev.rating ? 'fill-current text-amber-400' : 'text-gray-700'
+                              (rev.rating || 5) >= s ? 'fill-amber-400 text-amber-400' : 'text-gray-700'
                             }`}
                           />
                         ))}
                       </div>
-                      <span className="text-[10px] text-gray-500">
-                        {new Date(rev.createdAt).toLocaleDateString()}
-                      </span>
                     </div>
-                  </div>
 
-                  <p className="text-xs text-gray-300 leading-relaxed pl-8">
-                    {rev.comment}
-                  </p>
-                </div>
+                    <p className="text-xs text-gray-300 pl-8 leading-relaxed">
+                      {rev.comment}
+                    </p>
+                  </CardContent>
+                </Card>
               ))
             )}
           </div>
         </section>
 
-        {/* Related Movies Rail */}
+        {/* More Related Cinema from Country */}
         {related.length > 0 && (
-          <section className="space-y-4 pt-6 border-t border-gray-800/60">
+          <section className="space-y-3 pt-6 border-t border-gray-800/60">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Tv className="w-5 h-5 text-orange-400" />
-                {t.relatedMovies} from {country.name}
-              </h2>
-              <Button asChild variant="ghost" size="sm" className="text-xs text-orange-400 hover:text-orange-300">
-                <Link to={`/${countryCode.toLowerCase()}/movies`}>
-                  {t.seeAll} →
-                </Link>
-              </Button>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" /> More from {country.name}
+                </p>
+                <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                  Related Regional Productions
+                </h2>
+              </div>
+
+              <Link
+                to={`/${countryCode.toLowerCase()}/movies`}
+                className="text-xs text-orange-400 hover:text-orange-300 font-semibold"
+              >
+                View all {country.name} movies →
+              </Link>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              {related.map((item) => (
-                <CountryMovieCard key={item.id} movie={item} countryCode={countryCode} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {related.map((m) => (
+                <CountryMovieCard key={m.id} movie={m} countryCode={countryCode} />
               ))}
             </div>
           </section>

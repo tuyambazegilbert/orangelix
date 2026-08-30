@@ -319,6 +319,57 @@ export const GeoContentService = {
     return null;
   },
 
+  /**
+   * Find all related episodes for a series, channel, or title group
+   */
+  async getSeriesEpisodes(currentItem: GeoContentItem): Promise<GeoContentItem[]> {
+    const country = currentItem.country || currentItem.countryCode || 'RW';
+    const channelId = currentItem.channelId || currentItem.youtubeChannelId;
+
+    const res = await this.getMoviesByCountry({
+      countryCode: country,
+      status: 'published',
+      limit: 80,
+    });
+
+    const all = res.items;
+    let episodes: GeoContentItem[] = [];
+
+    // Match by channel ID
+    if (channelId) {
+      episodes = all.filter(
+        (item) => (item.channelId === channelId || item.youtubeChannelId === channelId)
+      );
+    }
+
+    // Match by series title root
+    const titleRoot = (currentItem.title || '')
+      .replace(/ep(isode)?\s*\d+/i, '')
+      .replace(/part\s*\d+/i, '')
+      .replace(/season\s*\d+/i, '')
+      .replace(/s\d+e\d+/i, '')
+      .replace(/\|\s*.*$/, '')
+      .replace(/-\s*.*$/, '')
+      .trim();
+
+    if (titleRoot.length >= 3) {
+      const titleMatches = all.filter((item) =>
+        (item.title || '').toLowerCase().includes(titleRoot.toLowerCase())
+      );
+      episodes = Array.from(new Map([...episodes, ...titleMatches].map((i) => [i.id, i])).values());
+    }
+
+    // Sort episodes naturally (Episode 1, 2, 3... or chronological)
+    episodes.sort((a, b) => {
+      const numA = (a.title.match(/(?:ep(?:isode)?|part)\s*(\d+)/i) || [])[1];
+      const numB = (b.title.match(/(?:ep(?:isode)?|part)\s*(\d+)/i) || [])[1];
+      if (numA && numB) return parseInt(numA, 10) - parseInt(numB, 10);
+      return new Date(a.publishedAt || 0).getTime() - new Date(b.publishedAt || 0).getTime();
+    });
+
+    return episodes;
+  },
+
   /** Check video availability on YouTube and update status if removed */
   async verifyVideoAvailability(videoId: string): Promise<boolean> {
     const { isAvailable, isEmbeddable } = await YouTubeClient.checkAvailability(videoId);

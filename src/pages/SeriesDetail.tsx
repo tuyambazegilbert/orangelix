@@ -164,7 +164,7 @@ export default function SeriesDetail() {
       />
 
       {/* Backdrop Hero */}
-      <div className="relative h-[65vh] min-h-[480px] w-full overflow-hidden">
+      <div className="relative h-[36vh] sm:h-[50vh] md:h-[65vh] min-h-[220px] sm:min-h-[360px] md:min-h-[480px] w-full overflow-hidden">
         <img
           src={series.backdropUrl || BACKDROP_FALLBACK}
           alt={series.title}
@@ -174,7 +174,7 @@ export default function SeriesDetail() {
         <div className="absolute inset-0 bg-gradient-to-r from-gray-950 via-transparent to-transparent" />
       </div>
 
-      <div className="page-wrap -mt-72 relative z-10 space-y-12 pb-16">
+      <div className="page-wrap -mt-20 sm:-mt-44 md:-mt-72 relative z-10 space-y-8 sm:space-y-12 pb-16">
         <Breadcrumbs
           items={[
             { name: 'TV Series', url: '/series' },

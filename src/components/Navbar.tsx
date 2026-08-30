@@ -31,6 +31,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 
 const primaryLinks = [
@@ -300,10 +307,47 @@ export default function Navbar() {
             </Link>
           )}
 
+          {/* Mobile Country Quick Dropdown in Header */}
+          <div className="xl:hidden ml-auto mr-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded-xl px-2.5 py-1.5 text-xs text-white shadow-sm focus:outline-none"
+                  aria-label="Select cinema country"
+                >
+                  <span className="text-sm">{activeCountry.flagEmoji}</span>
+                  <span className="font-bold text-[11px] text-orange-400">{activeCountry.countryCode}</span>
+                  <ChevronDown className="w-3 h-3 text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-gray-900 border-gray-800 text-white w-52 shadow-2xl">
+                <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-gray-400 font-bold px-2 py-1.5 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-orange-400" /> Cinema Territories
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-gray-800" />
+                {countries.map((c) => (
+                  <DropdownMenuItem
+                    key={c.countryCode}
+                    onClick={() => handleCountrySelect(c.countryCode)}
+                    className="flex items-center justify-between text-xs py-2 cursor-pointer hover:bg-gray-800"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{c.flagEmoji}</span>
+                      <span className="font-medium text-white">{c.name}</span>
+                    </div>
+                    {c.countryCode === currentCountryCode && (
+                      <Badge className="bg-orange-500 text-white text-[9px] px-1.5 py-0">Active</Badge>
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           {/* Mobile Menu Toggle Button */}
           <button
             onClick={() => setOpen(!open)}
-            className="ml-auto rounded-xl p-2.5 text-white bg-gray-900 border border-gray-800 xl:hidden focus:outline-none"
+            className="rounded-xl p-2.5 text-white bg-gray-900 border border-gray-800 xl:hidden focus:outline-none"
             aria-expanded={open}
             aria-label="Toggle navigation menu"
           >
@@ -327,27 +371,38 @@ export default function Navbar() {
               </label>
             </form>
 
-            {/* Country Selector in Mobile Drawer */}
+            {/* Sleek Country Dropdown in Mobile Drawer */}
             <div className="space-y-2 p-3 bg-black/40 border border-white/10 rounded-2xl">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5" /> Select Country Cinema
-              </p>
-              <div className="grid grid-cols-2 gap-1.5">
-                {countries.map((c) => (
-                  <button
-                    key={c.countryCode}
-                    onClick={() => handleCountrySelect(c.countryCode)}
-                    className={`flex items-center gap-2 p-2 rounded-xl text-xs font-semibold text-left transition border ${
-                      c.countryCode === currentCountryCode
-                        ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
-                        : 'bg-gray-900/60 border-gray-800 text-gray-300 hover:text-white'
-                    }`}
-                  >
-                    <span className="text-base">{c.flagEmoji}</span>
-                    <span className="truncate">{c.name}</span>
-                  </button>
-                ))}
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5" /> Cinema Territory
+                </span>
+                <span className="text-[11px] text-gray-400 font-mono">
+                  {activeCountry.name}
+                </span>
               </div>
+
+              <Select
+                value={currentCountryCode}
+                onValueChange={(code) => {
+                  handleCountrySelect(code);
+                  setOpen(false);
+                }}
+              >
+                <SelectTrigger className="w-full bg-gray-900 border-gray-700 text-xs text-white h-10 rounded-xl">
+                  <SelectValue placeholder="Select Country Cinema" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                  {countries.map((c) => (
+                    <SelectItem key={c.countryCode} value={c.countryCode} className="text-xs py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{c.flagEmoji}</span>
+                        <span className="font-semibold text-white">{c.name} Cinema</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* All Nav Links in Mobile Drawer */}

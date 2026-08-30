@@ -120,7 +120,7 @@ export default function Home() {
           {geoCinemaItems.length > 0 && (
             <GeoContentRail
               title="African & Regional Cinema Spotlight"
-              eyebrow="Authentic Stories & Full Movies from YouTube"
+              eyebrow="Full Movies from YouTube"
               icon={<Film className="w-3 h-3 text-orange-400" />}
               items={geoCinemaItems}
               countryCode="RW"

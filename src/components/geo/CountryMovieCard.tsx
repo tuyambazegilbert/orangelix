@@ -1,6 +1,6 @@
 /**
  * OrangeFlix Country Movie & YouTube Video Card
- * High-performance movie card with duration badge, channel info, view counts, rating, and direct Add to Watchlist action.
+ * High-performance movie card with duration badge, channel info, view counts, release date, rating, and direct Add to Watchlist action.
  * Zero embedded iframes on cards for maximum browser performance.
  */
 
@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { GeoContentItem } from '@/types/geo-content';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Play, Clock, Eye, Sparkles, Youtube, Bookmark, Star, Check } from 'lucide-react';
+import { Play, Clock, Eye, Sparkles, Youtube, Bookmark, Star, Check, Calendar } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { MovieService } from '@/lib/movies';
 import { toast } from 'sonner';
@@ -78,6 +78,9 @@ export default function CountryMovieCard({ movie, countryCode }: CountryMovieCar
   // Approximate star rating from score or view popularity
   const ratingValue = score >= 70 ? (4.5 + (score % 5) * 0.1).toFixed(1) : (4.0 + (views > 10000 ? 0.4 : 0.1)).toFixed(1);
 
+  // Release Date
+  const releaseYear = movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : '2026';
+
   return (
     <Link to={detailUrl} className="group block h-full select-none" aria-label={`Watch ${movie.title}`}>
       <Card className="h-full bg-gray-900/60 border-gray-800/80 hover:border-orange-500/60 transition-all duration-300 overflow-hidden flex flex-col justify-between hover:shadow-xl hover:shadow-orange-500/10 hover:-translate-y-1 rounded-2xl">
@@ -103,30 +106,25 @@ export default function CountryMovieCard({ movie, countryCode }: CountryMovieCar
                 ? '🇰🇪 Kenya'
                 : movie.country === 'NG' || movie.countryCode === 'NG'
                 ? '🇳🇬 Nigeria'
-                : movie.country === 'TZ' || movie.countryCode === 'TZ'
-                ? '🇹🇿 Tanzania'
                 : movie.country === 'GH' || movie.countryCode === 'GH'
                 ? '🇬🇭 Ghana'
+                : movie.country === 'TZ' || movie.countryCode === 'TZ'
+                ? '🇹🇿 Tanzania'
                 : movie.country === 'ZA' || movie.countryCode === 'ZA'
                 ? '🇿🇦 South Africa'
-                : movie.country || movie.countryCode}
+                : movie.country === 'US' || movie.countryCode === 'US'
+                ? '🇺🇸 USA'
+                : '🌍 Cinema'}
             </Badge>
 
-            <div className="flex items-center gap-1.5">
-              {movie.isFullMovieCandidate ? (
-                <Badge className="bg-orange-500/90 backdrop-blur-md text-[10px] font-semibold text-white border-0 shadow-md">
-                  Full Movie
-                </Badge>
-              ) : (
-                <Badge className="bg-violet-600/80 backdrop-blur-md text-[10px] text-white border-0">
-                  {classification === 'series' || classification === 'episode' ? 'Series' : 'Video'}
-                </Badge>
-              )}
+            <div className="flex items-center gap-1">
+              <Badge className="bg-orange-500/85 backdrop-blur-md text-[9px] text-white font-semibold border-none px-1.5 py-0.5">
+                {movie.isFullMovieCandidate ? 'Movie' : 'Series'}
+              </Badge>
 
-              {/* Add to Watchlist Icon Button */}
               <button
                 onClick={handleWatchlistToggle}
-                className={`w-7 h-7 rounded-full flex items-center justify-center transition backdrop-blur-md border ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-md border transition-all duration-200 ${
                   inWatchlist
                     ? 'bg-orange-500 text-white border-orange-400'
                     : 'bg-black/60 text-white/80 hover:text-white hover:bg-black/90 border-white/20'
@@ -160,7 +158,7 @@ export default function CountryMovieCard({ movie, countryCode }: CountryMovieCar
           </div>
         </div>
 
-        <CardContent className="p-3.5 flex-1 flex flex-col justify-between space-y-2">
+        <CardContent className="p-3 flex-1 flex flex-col justify-between space-y-2">
           <div className="space-y-1">
             <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-2 group-hover:text-orange-400 transition-colors leading-snug">
               {movie.title}
@@ -172,18 +170,15 @@ export default function CountryMovieCard({ movie, countryCode }: CountryMovieCar
           </div>
 
           <div className="pt-2 border-t border-gray-800/60 flex items-center justify-between text-[11px] text-gray-400">
-            <span className="inline-flex items-center gap-1">
-              <Eye className="w-3 h-3 text-gray-500" />
-              {formatViews(views)} views
+            <span className="inline-flex items-center gap-1 font-mono text-slate-300">
+              <Calendar className="w-3 h-3 text-orange-400" />
+              {releaseYear}
             </span>
 
-            {score >= 60 ? (
-              <span className="inline-flex items-center gap-0.5 text-amber-400 font-semibold text-[10px]">
-                <Sparkles className="w-3 h-3" /> Premiere
-              </span>
-            ) : (
-              <span className="text-[10px] text-gray-500 font-mono">HD Cinema</span>
-            )}
+            <span className="inline-flex items-center gap-1">
+              <Eye className="w-3 h-3 text-gray-500" />
+              {formatViews(views)}
+            </span>
           </div>
         </CardContent>
       </Card>
