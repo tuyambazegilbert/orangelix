@@ -12,7 +12,9 @@ interface BreadcrumbsProps {
 }
 
 export default function Breadcrumbs({ items }: BreadcrumbsProps) {
-  const fullItems = [{ name: 'Home', url: '/' }, ...items];
+  // Filter out duplicate 'Home' root if passed by caller
+  const cleanItems = items.filter((item) => item.url !== '/' && item.name.toLowerCase() !== 'home');
+  const fullItems = [{ name: 'Home', url: '/' }, ...cleanItems];
 
   return (
     <>
@@ -29,8 +31,8 @@ export default function Breadcrumbs({ items }: BreadcrumbsProps) {
           <span>Home</span>
         </Link>
 
-        {items.map((item, idx) => {
-          const isLast = idx === items.length - 1;
+        {cleanItems.map((item, idx) => {
+          const isLast = idx === cleanItems.length - 1;
           return (
             <div key={item.url} className="flex items-center gap-1.5">
               <ChevronRight className="h-3 w-3 text-slate-600" />

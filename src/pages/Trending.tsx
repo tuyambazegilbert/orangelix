@@ -1,19 +1,102 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { BookmarkPlus, Film, Info, Play, Sparkles, Star, Tv } from 'lucide-react';
 import { useTrending } from '@/hooks/use-tmdb';
 import { useAuth } from '@/contexts/AuthContext';
 import { MovieService } from '@/lib/movies';
 import { FirebaseData } from '@/lib/firebase-data';
 import MovieCard from '@/components/MovieCard';
+import StageSlider from '@/components/StageSlider';
+import GeoCountryShowcase from '@/components/geo/GeoCountryShowcase';
+import { getAllCountries } from '@/features/geo/countryConfig';
 import { toast } from 'sonner';
 
 export default function Trending() {
-  const [type, setType] = useState<'all' | 'movie' | 'tv'>('all'); const [window, setWindow] = useState<'day' | 'week'>('week'); const { currentUser } = useAuth();
-  const query = useTrending(type, window); const [saved, setSaved] = useState(false); const items = query.data?.items || []; const feature = items[0];
-  const featureId = feature ? `${feature.mediaType}-${feature.tmdbId}` : '';
-  const toggleSave = () => { if (!feature || !currentUser) return toast.error('Sign in to save titles'); const exists = MovieService.isFavorite(featureId, currentUser.id); if (exists) { MovieService.removeFromFavorites(featureId, currentUser.id); void FirebaseData.removeFavorites(currentUser.id, featureId); setSaved(false); toast.success('Removed from favorites'); } else { MovieService.addToFavorites(featureId, currentUser.id, { tmdbId: feature.tmdbId, mediaType: feature.mediaType, cachedMedia: feature }); void FirebaseData.setFavorites(currentUser.id, feature); setSaved(true); toast.success('Added to favorites'); } };
-  return <main className="page-wrap"><header className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="section-eyebrow mb-1">Live popularity</p><h1 className="text-3xl font-bold tracking-tight text-white">Trending now</h1><p className="mt-1 text-sm text-slate-400">The stories everyone is talking about.</p></div><div className="flex flex-wrap gap-2"><div className="flex rounded-lg border border-white/[.1] bg-white/[.035] p-1">{([{key: 'all', label: 'All', icon: Sparkles}, {key: 'movie', label: 'Movies', icon: Film}, {key: 'tv', label: 'Series', icon: Tv}] as const).map(({key, label, icon: Icon}) => <button key={key} onClick={() => setType(key)} className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold ${type === key ? 'bg-orange-500 text-white' : 'text-slate-400 hover:text-white'}`}><Icon className="h-3.5 w-3.5" />{label}</button>)}</div><button onClick={() => setWindow(window === 'week' ? 'day' : 'week')} className="rounded-lg border border-white/[.1] px-3 text-xs font-semibold text-slate-300 hover:bg-white/[.06]">This {window}</button></div></header>
-    {query.isLoading ? <div className="skeleton h-[270px] rounded-xl" /> : feature ? <><section className="relative isolate min-h-[260px] overflow-hidden rounded-xl border border-white/[.1] bg-[#101725] sm:min-h-[280px]"><img src={feature.backdropUrl || feature.imageUrl} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover opacity-55" /><div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,#0d1422_4%,rgba(13,20,34,.92)_36%,rgba(13,20,34,.35)_100%),linear-gradient(0deg,#0d1422,transparent_80%)]" /><div className="flex min-h-[260px] max-w-2xl flex-col justify-end p-5 sm:min-h-[280px] sm:p-7"><div className="mb-3 flex flex-wrap items-center gap-2"><span className="rounded-md bg-orange-500 px-2 py-1 text-[10px] font-black tracking-wider text-white">#1 TRENDING</span><span className="text-[11px] font-semibold uppercase tracking-wider text-orange-300">{feature.mediaType === 'tv' ? 'TV series' : 'Movie'}</span></div><h2 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">{feature.title}</h2><div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-300"><span className="flex items-center gap-1 font-semibold text-white"><Star className="h-3.5 w-3.5 fill-orange-400 text-orange-400" />{feature.voteAverage.toFixed(1)}</span><span>{feature.releaseYear || 'New release'}</span><span>{feature.genres.slice(0, 2).join(' · ')}</span></div><p className="mt-3 max-w-xl line-clamp-2 text-sm leading-5 text-slate-200">{feature.description}</p><div className="mt-5 flex gap-2"><Link to={`/watch/${feature.mediaType}-${feature.tmdbId}`} className="premium-button inline-flex h-9 items-center gap-2 rounded-lg px-4 text-xs font-semibold"><Play className="h-3.5 w-3.5 fill-current" />Watch now</Link><button onClick={toggleSave} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold backdrop-blur ${saved ? 'border-orange-400/40 bg-orange-400/15 text-orange-200' : 'border-white/[.16] bg-white/[.08] text-white hover:bg-white/[.15]'}`}><BookmarkPlus className="h-3.5 w-3.5" />{saved ? 'Saved' : 'Watchlist'}</button><Link to={`/${feature.mediaType === 'tv' ? 'series' : 'movie'}/${feature.tmdbId}`} className="grid h-9 w-9 place-items-center rounded-lg border border-white/[.16] bg-white/[.08] text-white backdrop-blur hover:bg-white/[.15]" aria-label="View details"><Info className="h-3.5 w-3.5" /></Link></div></div></section><section className="mt-7"><div className="mb-4 flex items-center justify-between"><div><p className="section-eyebrow mb-1">Ranked today</p><h2 className="section-title">Keep exploring</h2></div><span className="text-xs text-slate-500">{items.length - 1} titles</span></div><div className="content-grid">{items.slice(1).map((item, index) => <div className="relative" key={item.id}><span className="absolute left-1.5 top-1.5 z-20 grid h-6 min-w-6 place-items-center rounded-md bg-[#080d16]/90 px-1 text-[10px] font-black text-orange-300 backdrop-blur">{index + 2}</span><MovieCard movie={item} /></div>)}</div></section></> : <div className="rounded-xl border border-white/[.08] bg-white/[.025] p-10 text-center text-sm text-slate-400">Trending titles are unavailable. <button onClick={() => query.refetch()} className="ml-1 font-semibold text-orange-400">Try again</button></div>}
-  </main>;
+  const navigate = useNavigate();
+  const [type, setType] = useState<'all' | 'movie' | 'tv'>('all');
+  const [window, setWindow] = useState<'day' | 'week'>('week');
+  const { currentUser } = useAuth();
+  const countries = useMemo(() => getAllCountries(), []);
+
+  const query = useTrending(type, window);
+  const [saved, setSaved] = useState(false);
+  const items = query.data?.items || [];
+  const featured = items.slice(0, 6);
+
+  return (
+    <div className="min-h-screen bg-[#080d17] text-white overflow-x-hidden">
+      {/* 3D StageSlider Hero Section */}
+      {featured.length > 0 && <StageSlider items={featured} />}
+
+      <main className="page-wrap py-6 space-y-6">
+        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-orange-400 mb-1 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> Live Popularity & Trends
+            </p>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Trending Now</h1>
+            <p className="mt-0.5 text-xs sm:text-sm text-slate-400">The most popular stories everyone is talking about.</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-xl border border-white/[.1] bg-gray-900/60 p-1">
+              {(
+                [
+                  { key: 'all', label: 'All', icon: Sparkles },
+                  { key: 'movie', label: 'Movies', icon: Film },
+                  { key: 'tv', label: 'Series', icon: Tv },
+                ] as const
+              ).map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  onClick={() => setType(key)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    type === key ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setWindow(window === 'week' ? 'day' : 'week')}
+              className="rounded-xl border border-white/[.1] bg-gray-900/60 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[.08] transition"
+            >
+              This {window === 'week' ? 'Week' : 'Day'}
+            </button>
+          </div>
+        </header>
+
+        {query.isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {Array.from({ length: 18 }).map((_, index) => (
+              <div key={index} className="aspect-[2/3] bg-gray-900/60 border border-gray-800/80 rounded-2xl animate-pulse" />
+            ))}
+          </div>
+        ) : items.length > 0 ? (
+          <section className="space-y-4">
+            <div className="content-grid">
+              {items.map((item, index) => (
+                <div className="relative" key={item.id}>
+                  <span className="absolute left-2 top-2 z-20 grid h-6 min-w-6 place-items-center rounded-lg bg-[#080d16]/95 px-1.5 text-[10px] font-black text-orange-300 backdrop-blur border border-white/10 shadow-md">
+                    #{index + 1}
+                  </span>
+                  <MovieCard movie={item} />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-10 text-center text-sm text-slate-400">
+            Trending titles are unavailable.{' '}
+            <button onClick={() => query.refetch()} className="ml-1 font-semibold text-orange-400">
+              Try again
+            </button>
+          </div>
+        )}
+      </main>
+    </div>
+  );
 }

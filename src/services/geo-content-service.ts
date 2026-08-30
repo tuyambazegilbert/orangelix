@@ -789,7 +789,7 @@ export const GeoContentService = {
       // Count total qualifying cinema videos for this channel in memory
       const totalForChannel = Array.from(memoryCache.values()).filter(
         (i) =>
-          (i.youtubeChannelId === channelId || i.channelId === channelId) &&
+          (i.youtubeChannelId === ch.channelId || i.channelId === ch.channelId) &&
           (i.isFullMovieCandidate || i.classification === 'movie' || i.classification === 'series' || i.classification === 'episode') &&
           i.status !== 'unavailable' &&
           i.status !== 'rejected'

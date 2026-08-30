@@ -97,6 +97,7 @@ const App = () => (
                   <Route path="/music/movie/:id" element={<MovieSoundtrack />} />
                   <Route path="/books" element={<Books />} />
                   <Route path="/people/:id" element={<PeopleDetail />} />
+                  <Route path="/genres" element={<Genres />} />
                   <Route path="/genres/:slug" element={<Genres />} />
                   <Route path="/collections/:slug" element={<Collections />} />
                   <Route path="/u/:username" element={<PublicProfile />} />

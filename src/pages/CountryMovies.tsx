@@ -2,6 +2,8 @@
  * OrangeFlix Country-Specific Movie & Cinema Discovery Catalog
  * Route: /:countryCode/movies and /:countryCode/series (e.g. /rw/movies, /ke/movies, /ng/movies)
  * Conforms strictly to Sections 10, 14, 18, 20, 21 specifications.
+ * Features categorized rails (Recommended for you on top, New Releases, Trending, Popular, Binge-Worthy Series, New in Theatres),
+ * country location switching, and territory showcase.
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -18,6 +20,8 @@ import {
 import { getGeoTranslations } from '@/features/geo/translations';
 import CountryMovieCard from '@/components/geo/CountryMovieCard';
 import CountryStageSlider from '@/components/geo/CountryStageSlider';
+import GeoContentRail from '@/components/geo/GeoContentRail';
+import GeoCountryShowcase from '@/components/geo/GeoCountryShowcase';
 import SEOHead from '@/components/seo/SEOHead';
 import Breadcrumbs from '@/components/Breadcrumbs';
 import { Input } from '@/components/ui/input';
@@ -43,10 +47,16 @@ import {
   Layers,
   AlertCircle,
   Clock3,
+  Flame,
+  Star,
+  Theater,
+  Grid,
+  ListFilter,
+  Globe,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-type CatalogTab = 'full_movies' | 'popular' | 'latest' | 'series' | 'episodes' | 'all';
+type CatalogTab = 'rails' | 'full_movies' | 'popular' | 'latest' | 'series' | 'episodes' | 'all';
 type DurationRange = 'all' | 'under_20' | '20_45' | '45_90' | '90_plus';
 
 export default function CountryMovies() {
@@ -59,14 +69,15 @@ export default function CountryMovies() {
   const countryCode = (rawCountryCode || 'rw').toUpperCase();
   const country = useMemo(() => getCountryConfig(countryCode), [countryCode]);
 
-  // Determine initial tab from route
   const isSeriesRoute = location.pathname.includes('/series');
-  const [activeTab, setActiveTab] = useState<CatalogTab>(isSeriesRoute ? 'series' : 'full_movies');
+  const [activeTab, setActiveTab] = useState<CatalogTab>(isSeriesRoute ? 'series' : 'rails');
   const [language, setLanguage] = useState<string>(() => GeolocationService.getUserLanguage());
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [durationRange, setDurationRange] = useState<DurationRange>('all');
   const [movies, setMovies] = useState<GeoContentItem[]>([]);
   const [featuredMovies, setFeaturedMovies] = useState<GeoContentItem[]>([]);
+  const [recommendedMovies, setRecommendedMovies] = useState<GeoContentItem[]>([]);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [totalCountryItems, setTotalCountryItems] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -93,13 +104,14 @@ export default function CountryMovies() {
     let isMounted = true;
     const loadFeaturedAndCounts = async () => {
       const [recs, allRes, pendingRes] = await Promise.all([
-        GeoContentService.getRecommendations(countryCode, 6),
-        GeoContentService.getMoviesByCountry({ countryCode, status: 'all', limit: 100 }),
+        GeoContentService.getRecommendations(countryCode, 8),
+        GeoContentService.getMoviesByCountry({ countryCode, status: 'all', limit: 150 }),
         GeoContentService.getMoviesByCountry({ countryCode, status: 'pending_review', limit: 100 }),
       ]);
 
       if (isMounted) {
-        setFeaturedMovies(recs);
+        setRecommendedMovies(recs);
+        setFeaturedMovies(recs.slice(0, 6));
         setTotalCountryItems(allRes.total);
         setPendingCount(pendingRes.total);
         const log = GeoContentService.getDiscoverySummary(countryCode);
@@ -137,15 +149,17 @@ export default function CountryMovies() {
         contentType = 'episode';
       }
 
+      const effectiveSearch = searchQuery.trim() || (selectedCategory !== 'all' ? selectedCategory : undefined);
+
       const res = await GeoContentService.getMoviesByCountry({
         countryCode,
         isFullMovieCandidate,
         contentType,
-        searchQuery: searchQuery.trim() || undefined,
+        searchQuery: effectiveSearch,
         durationRange,
         sortBy,
         status: 'published',
-        limit: 60,
+        limit: 100,
       });
 
       if (isMounted) {
@@ -161,7 +175,40 @@ export default function CountryMovies() {
     return () => {
       isMounted = false;
     };
-  }, [countryCode, activeTab, searchQuery, durationRange]);
+  }, [countryCode, activeTab, searchQuery, selectedCategory, durationRange]);
+
+  // Categorized movie splits for rails
+  const newReleases = useMemo(() => {
+    return [...movies]
+      .filter((m) => m.isFullMovieCandidate || m.classification === 'movie')
+      .sort((a, b) => new Date(b.publishedAt || b.createdAt || '').getTime() - new Date(a.publishedAt || a.createdAt || '').getTime())
+      .slice(0, 12);
+  }, [movies]);
+
+  const trendingMovies = useMemo(() => {
+    return [...movies]
+      .sort((a, b) => (b.views || b.viewCount || 0) - (a.views || a.viewCount || 0))
+      .slice(0, 12);
+  }, [movies]);
+
+  const popularTopRated = useMemo(() => {
+    return [...movies]
+      .filter((m) => (m.score || m.classificationScore || 0) >= 50 || (m.views || 0) > 5000)
+      .sort((a, b) => (b.score || 0) * (b.views || 1) - (a.score || 0) * (a.views || 1))
+      .slice(0, 12);
+  }, [movies]);
+
+  const bingeWorthySeries = useMemo(() => {
+    return [...movies]
+      .filter((m) => m.classification === 'series' || m.classification === 'episode' || !m.isFullMovieCandidate)
+      .slice(0, 12);
+  }, [movies]);
+
+  const newInTheatres = useMemo(() => {
+    return [...movies]
+      .filter((m) => m.isFullMovieCandidate && (m.durationSeconds || 0) >= 3600)
+      .slice(0, 12);
+  }, [movies]);
 
   const handleRunDiscovery = async () => {
     setIsDiscovering(true);
@@ -182,13 +229,14 @@ export default function CountryMovies() {
       const refreshed = await GeoContentService.getMoviesByCountry({
         countryCode,
         status: 'published',
-        limit: 60,
+        limit: 100,
       });
-      const allRes = await GeoContentService.getMoviesByCountry({ countryCode, status: 'all', limit: 100 });
+      const allRes = await GeoContentService.getMoviesByCountry({ countryCode, status: 'all', limit: 150 });
       const pendingRes = await GeoContentService.getMoviesByCountry({ countryCode, status: 'pending_review', limit: 100 });
 
       setMovies(refreshed.items);
       setFeaturedMovies(refreshed.items.slice(0, 6));
+      setRecommendedMovies(refreshed.items.slice(0, 8));
       setTotalCountryItems(allRes.total);
       setPendingCount(pendingRes.total);
     } catch (err: unknown) {
@@ -202,7 +250,7 @@ export default function CountryMovies() {
   const pageTitle = `${country.flagEmoji} ${t.watchMovies(country.name)} — OrangeFlix Cinema`;
   const pageDescription = t.discoverSubtitle(country.name);
 
-  // Render context-aware empty states (Section 14)
+  // Render context-aware empty states
   const renderEmptyState = () => {
     if (!hasApiKey) {
       return (
@@ -265,6 +313,8 @@ export default function CountryMovies() {
     );
   };
 
+  const isFiltered = Boolean(searchQuery.trim() || selectedCategory !== 'all' || durationRange !== 'all');
+
   return (
     <div className="min-h-screen bg-[#080b12] text-white overflow-x-hidden">
       <SEOHead
@@ -272,13 +322,6 @@ export default function CountryMovies() {
         description={pageDescription}
         url={`https://orangeflixx.vercel.app/${countryCode.toLowerCase()}/movies`}
       />
-
-      {/* Development configuration warning if API key missing */}
-      {!hasApiKey && process.env.NODE_ENV !== 'production' && (
-        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-center text-xs text-amber-300">
-          YouTube discovery is not configured. Check <code>VITE_YOUTUBE_API_KEY</code> and YouTube Data API v3.
-        </div>
-      )}
 
       {/* 3D StageSlider Hero (Matching Home Landing Page Hero) */}
       <CountryStageSlider
@@ -290,190 +333,291 @@ export default function CountryMovies() {
         onLanguageChange={handleLanguageChange}
       />
 
-      <main className="page-wrap py-8 max-w-7xl mx-auto space-y-8">
+      <main className="page-wrap py-6 max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
         <Breadcrumbs
           items={[
-            { name: 'Home', url: '/' },
-            { name: `${country.name} Movies`, url: `/${countryCode.toLowerCase()}/movies` },
+            { name: `${country.name} Cinema`, url: `/${countryCode.toLowerCase()}/movies` },
           ]}
         />
 
-        {/* Section Header (Section 20) */}
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl" role="img" aria-label={country.name}>{country.flagEmoji}</span>
-            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              {country.name} Cinema
-            </h2>
-          </div>
-          <p className="text-xs sm:text-sm text-gray-400">
-            Curated cinema & stories from {country.name} discovered on YouTube.
-          </p>
-        </div>
+        {/* Territory Showcase & Country Quick Switcher */}
+        <GeoCountryShowcase
+          currentCountryCode={countryCode}
+          countries={allCountries}
+          onSelectCountry={handleCountryChange}
+        />
 
-        {/* Filter Controls & Search Bar */}
-        <section className="space-y-4">
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
-            {/* Navigation Tabs (Section 18, 20) */}
+        {/* Section Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2 border-t border-gray-800/80">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl" role="img" aria-label={country.name}>{country.flagEmoji}</span>
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                {country.name} Cinema Catalog
+              </h1>
+            </div>
+            <p className="text-xs sm:text-sm text-gray-400">
+              Curated full movies, series & cultural storytelling from {country.name} discovered on YouTube.
+            </p>
+          </div>
+
+          {/* Quick Category / Navigation Tabs */}
+          <div className="flex items-center gap-2">
             <Tabs
               value={activeTab}
               onValueChange={(v) => setActiveTab(v as CatalogTab)}
-              className="w-full lg:w-auto"
+              className="w-full sm:w-auto"
             >
               <TabsList className="bg-gray-900/80 border border-gray-800 p-1 rounded-xl h-auto flex flex-wrap">
                 <TabsTrigger
-                  value="full_movies"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5"
+                  value="rails"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  {t.fullMovies}
+                  Featured Rails
                 </TabsTrigger>
                 <TabsTrigger
-                  value="popular"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5"
+                  value="full_movies"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 >
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  {t.popular}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="latest"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5"
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  {t.recentlyAdded}
+                  <Film className="w-3.5 h-3.5" />
+                  Full Movies
                 </TabsTrigger>
                 <TabsTrigger
                   value="series"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 >
                   <Tv className="w-3.5 h-3.5" />
-                  TV Series
-                </TabsTrigger>
-                <TabsTrigger
-                  value="episodes"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5"
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  Episodes
+                  Series
                 </TabsTrigger>
                 <TabsTrigger
                   value="all"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3.5 py-1.5 rounded-lg"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
                 >
-                  {t.allContent}
+                  <Grid className="w-3.5 h-3.5" />
+                  All Grid
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+          </div>
+        </div>
 
-            {/* Search & Duration Range Dropdown (Section 18) */}
-            <div className="flex items-center gap-2.5 flex-1 max-w-md">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <Input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={t.searchPlaceholder(country.name)}
-                  className="pl-9 bg-gray-900/80 border-gray-800 text-xs text-white h-10 rounded-xl focus:border-orange-500"
-                />
-              </div>
-
-              <Select
-                value={durationRange}
-                onValueChange={(v) => setDurationRange(v as DurationRange)}
-              >
-                <SelectTrigger className="w-[150px] bg-gray-900/80 border-gray-800 text-xs text-white h-10 rounded-xl">
-                  <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
-                  <SelectValue placeholder="Duration" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                  <SelectItem value="all" className="text-xs">All Durations</SelectItem>
-                  <SelectItem value="under_20" className="text-xs">Under 20m</SelectItem>
-                  <SelectItem value="20_45" className="text-xs">20–45m</SelectItem>
-                  <SelectItem value="45_90" className="text-xs">45–90m</SelectItem>
-                  <SelectItem value="90_plus" className="text-xs">90m+</SelectItem>
-                </SelectContent>
-              </Select>
+        {/* Filter Controls & Search Bar */}
+        <section className="space-y-3 p-4 bg-gray-900/40 border border-gray-800/80 rounded-2xl">
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t.searchPlaceholder(country.name)}
+                className="pl-9 bg-gray-950 border-gray-800 text-xs text-white h-10 rounded-xl focus:border-orange-500"
+              />
             </div>
+
+            {/* Duration Range Selector */}
+            <Select
+              value={durationRange}
+              onValueChange={(v) => setDurationRange(v as DurationRange)}
+            >
+              <SelectTrigger className="w-full sm:w-[160px] bg-gray-950 border-gray-800 text-xs text-white h-10 rounded-xl">
+                <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
+                <SelectValue placeholder="Duration" />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                <SelectItem value="all" className="text-xs">All Durations</SelectItem>
+                <SelectItem value="under_20" className="text-xs">Shorts (&lt; 20m)</SelectItem>
+                <SelectItem value="20_45" className="text-xs">Mini (20–45m)</SelectItem>
+                <SelectItem value="45_90" className="text-xs">Feature (45–90m)</SelectItem>
+                <SelectItem value="90_plus" className="text-xs">Full Length (90m+)</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Reset Filters */}
+            {isFiltered && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCategory('all');
+                  setDurationRange('all');
+                }}
+                className="text-xs text-orange-400 hover:bg-orange-500/10 h-10 rounded-xl px-3"
+              >
+                Reset
+              </Button>
+            )}
           </div>
 
-          {/* Quick Search Tag Chips */}
-          {country.popularSearchSuggestions && country.popularSearchSuggestions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span className="text-[11px] text-gray-400 flex items-center gap-1 font-semibold">
-                <Tag className="w-3 h-3 text-orange-400" /> Popular searches:
+          {/* Quick Search Categories & Tags */}
+          {country.popularCategories && country.popularCategories.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[11px] text-gray-400 flex items-center gap-1 font-semibold mr-1">
+                <Tag className="w-3 h-3 text-orange-400" /> Categories:
               </span>
-              {country.popularSearchSuggestions.map((suggestion) => (
+              <button
+                onClick={() => setSelectedCategory('all')}
+                className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                  selectedCategory === 'all'
+                    ? 'bg-orange-500 text-white border-orange-500 font-semibold shadow-sm'
+                    : 'bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-white'
+                }`}
+              >
+                All
+              </button>
+              {country.popularCategories.map((cat) => (
                 <button
-                  key={suggestion}
-                  onClick={() => setSearchQuery(suggestion)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
-                    searchQuery.toLowerCase() === suggestion.toLowerCase()
-                      ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
-                      : 'bg-gray-900/60 text-gray-300 border-gray-800 hover:border-orange-500/40 hover:text-white'
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat.toLowerCase())}
+                  className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                    selectedCategory.toLowerCase() === cat.toLowerCase()
+                      ? 'bg-orange-500 text-white border-orange-500 font-semibold shadow-sm'
+                      : 'bg-gray-950 text-gray-400 border-gray-800 hover:border-orange-500/40 hover:text-white'
                   }`}
                 >
-                  {suggestion}
+                  {cat}
                 </button>
               ))}
             </div>
           )}
         </section>
 
-        {/* Movies Grid */}
-        <section className="space-y-4">
-          {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="rounded-2xl border border-gray-800 bg-gray-900/40 p-3 space-y-3 animate-pulse">
-                  <div className="aspect-video w-full bg-gray-800/60 rounded-xl" />
-                  <div className="h-4 bg-gray-800 rounded w-3/4" />
-                  <div className="h-3 bg-gray-800/50 rounded w-1/2" />
-                </div>
-              ))}
-            </div>
-          ) : movies.length === 0 ? (
-            <div className="text-center py-16 bg-gray-900/30 rounded-3xl border border-gray-800/80 p-8 space-y-4">
-              {renderEmptyState()}
+        {/* MODE 1: FEATURED CATEGORIZED RAILS (When not actively filtering with keyword) */}
+        {!isFiltered && activeTab === 'rails' && (
+          <div className="space-y-6">
+            {/* 1. RECOMMENDED FOR YOU (ON TOP) */}
+            <GeoContentRail
+              title="Recommended for you"
+              eyebrow="Personalized Cinema Picks"
+              icon={<Star className="w-3 h-3 text-amber-400 fill-current" />}
+              items={recommendedMovies.length > 0 ? recommendedMovies : movies.slice(0, 8)}
+              countryCode={countryCode}
+              onSeeAll={() => setActiveTab('all')}
+            />
 
-              {isAdmin && hasApiKey && (
-                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                  <Button
-                    size="sm"
-                    onClick={handleRunDiscovery}
-                    disabled={isDiscovering}
-                    className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold px-4"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isDiscovering ? 'animate-spin' : ''}`} />
-                    {isDiscovering ? 'Searching YouTube...' : `Discover ${country.name} Movies`}
-                  </Button>
+            {/* 2. NEW RELEASES */}
+            <GeoContentRail
+              title="New Releases"
+              eyebrow="Freshly Uploaded & Discovered"
+              icon={<Clock className="w-3 h-3 text-cyan-400" />}
+              items={newReleases.length > 0 ? newReleases : movies.slice(0, 8)}
+              countryCode={countryCode}
+              onSeeAll={() => setActiveTab('latest')}
+            />
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setDurationRange('all');
-                      setActiveTab('all');
-                    }}
-                    className="text-xs border-gray-700 text-gray-300 hover:text-white"
-                  >
-                    Reset Filters
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-              {movies.map((movie) => (
-                <CountryMovieCard key={movie.id} movie={movie} countryCode={countryCode} />
-              ))}
-            </div>
-          )}
-        </section>
+            {/* 3. TRENDING */}
+            <GeoContentRail
+              title="Trending"
+              eyebrow="Most Watched This Week"
+              icon={<Flame className="w-3 h-3 text-rose-500" />}
+              items={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 8)}
+              countryCode={countryCode}
+              onSeeAll={() => setActiveTab('popular')}
+            />
 
-        {/* Informational Disclaimer */}
-        <footer className="pt-6 border-t border-gray-800/60 text-center text-xs text-gray-500 space-y-1">
+            {/* 4. POPULAR */}
+            <GeoContentRail
+              title="Popular"
+              eyebrow="Critically Acclaimed Regional Hits"
+              icon={<TrendingUp className="w-3 h-3 text-emerald-400" />}
+              items={popularTopRated.length > 0 ? popularTopRated : movies.slice(0, 8)}
+              countryCode={countryCode}
+              onSeeAll={() => setActiveTab('popular')}
+            />
+
+            {/* 5. BINGE-WORTHY SERIES */}
+            <GeoContentRail
+              title="Binge-worthy series"
+              eyebrow="Continuous Multi-Part Storytelling"
+              icon={<Tv className="w-3 h-3 text-violet-400" />}
+              items={bingeWorthySeries.length > 0 ? bingeWorthySeries : movies.slice(0, 8)}
+              countryCode={countryCode}
+              onSeeAll={() => setActiveTab('series')}
+            />
+
+            {/* 6. NEW IN THEATRES */}
+            <GeoContentRail
+              title="New in theatres"
+              eyebrow="Feature-Length Regional Cinema"
+              icon={<Theater className="w-3 h-3 text-orange-400" />}
+              items={newInTheatres.length > 0 ? newInTheatres : movies.slice(0, 8)}
+              countryCode={countryCode}
+              onSeeAll={() => setActiveTab('full_movies')}
+            />
+          </div>
+        )}
+
+        {/* MODE 2: MOVIES GRID (When filtering or when tab is selected) */}
+        {(isFiltered || activeTab !== 'rails') && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Film className="w-4 h-4 text-orange-400" />
+                {activeTab === 'full_movies'
+                  ? `Full Length ${country.name} Movies`
+                  : activeTab === 'series'
+                  ? `${country.name} TV Shows & Series`
+                  : activeTab === 'popular'
+                  ? `Popular ${country.name} Cinema`
+                  : activeTab === 'latest'
+                  ? `Latest ${country.name} Releases`
+                  : `All ${country.name} Cinema Items`}
+                <span className="text-xs font-mono text-gray-500 font-normal">({movies.length})</span>
+              </h2>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTab('rails')}
+                className="text-xs text-orange-400 hover:bg-orange-500/10"
+              >
+                ← Back to Featured Rails
+              </Button>
+            </div>
+
+            {isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                {[...Array(8)].map((_, i) => (
+                  <div key={i} className="rounded-2xl border border-gray-800 bg-gray-900/40 p-3 space-y-3 animate-pulse">
+                    <div className="aspect-video w-full bg-gray-800/60 rounded-xl" />
+                    <div className="h-4 bg-gray-800 rounded w-3/4" />
+                    <div className="h-3 bg-gray-800/50 rounded w-1/2" />
+                  </div>
+                ))}
+              </div>
+            ) : movies.length === 0 ? (
+              <div className="text-center py-16 bg-gray-900/30 rounded-3xl border border-gray-800/80 p-8 space-y-4">
+                {renderEmptyState()}
+
+                {isAdmin && hasApiKey && (
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <Button
+                      size="sm"
+                      onClick={handleRunDiscovery}
+                      disabled={isDiscovering}
+                      className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold px-4 shadow-md"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isDiscovering ? 'animate-spin' : ''}`} />
+                      {isDiscovering ? 'Searching YouTube...' : `Discover ${country.name} Movies`}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                {movies.map((movie) => (
+                  <CountryMovieCard key={movie.id} movie={movie} countryCode={countryCode} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Informational Disclaimer Footer */}
+        <footer className="pt-8 border-t border-gray-800/60 text-center text-xs text-gray-500 space-y-1">
           <p>{t.disclaimer}</p>
           <p className="text-[11px] text-gray-600">
             OrangeFlix discovers and indexes public entertainment from YouTube using the YouTube Data API v3 and plays content via the official YouTube embedded player.
