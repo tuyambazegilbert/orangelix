@@ -71,8 +71,14 @@ import {
   Square,
   ShieldCheck,
   ShieldAlert,
+  Calendar,
+  Zap,
+  PlayCircle,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { AutoDiscoveryScheduler, AutoDiscoveryStatus } from '@/services/auto-discovery-scheduler';
 
 export default function YouTubeGeoAdminTab() {
   const [countries] = useState<GeoCountryConfig[]>(() => getAllCountries());
@@ -93,6 +99,13 @@ export default function YouTubeGeoAdminTab() {
   const [selectedScanChannel, setSelectedScanChannel] = useState<TrustedChannel | null>(null);
   const [summaryLog, setSummaryLog] = useState<DiscoverySummaryLog | null>(null);
   const [activeSection, setActiveSection] = useState<'content' | 'channels' | 'queries'>('content');
+
+  // Automated 3x-Weekly Discovery Scheduler State
+  const [schedulerStatus, setSchedulerStatus] = useState<AutoDiscoveryStatus>(() =>
+    AutoDiscoveryScheduler.getStatus()
+  );
+  const [isTriggeringScheduler, setIsTriggeringScheduler] = useState(false);
+  const [schedulerProgress, setSchedulerProgress] = useState<string | null>(null);
 
   // Multi-Select States
   const [selectedContentIds, setSelectedContentIds] = useState<Set<string>>(new Set());
@@ -248,6 +261,34 @@ export default function YouTubeGeoAdminTab() {
     } finally {
       setIsBatchScanning(false);
     }
+  };
+
+  const handleTriggerAutoDiscovery = async () => {
+    setIsTriggeringScheduler(true);
+    setSchedulerProgress('Initializing 3x-weekly multi-country scan...');
+    toast.info('Starting 3x-Weekly Cinema Discovery across all territories...');
+    try {
+      const log = await AutoDiscoveryScheduler.runMultiCountryAutoDiscovery('admin_manual', (code, step, total) => {
+        setSchedulerProgress(`Scanning ${code} (${step}/${total} countries)...`);
+      });
+      setSchedulerStatus(AutoDiscoveryScheduler.getStatus());
+      toast.success(
+        `3x-Weekly Discovery Complete! Discovered ${log.totalUniqueVideos} videos: ${log.totalNewMovies} new movies, ${log.totalNewSeries} new series across ${log.countriesScanned.length} countries.`
+      );
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Auto-discovery scan failed';
+      toast.error(msg);
+    } finally {
+      setIsTriggeringScheduler(false);
+      setSchedulerProgress(null);
+    }
+  };
+
+  const handleToggleAutoDiscoveryEnabled = (enabled: boolean) => {
+    AutoDiscoveryScheduler.updateConfig({ isEnabled: enabled });
+    setSchedulerStatus(AutoDiscoveryScheduler.getStatus());
+    toast.success(`Automated 3x-weekly discovery schedule ${enabled ? 'Enabled (Mon, Wed, Fri)' : 'Paused'}.`);
   };
 
   const handleAddChannel = async (e: React.FormEvent) => {
@@ -623,6 +664,80 @@ export default function YouTubeGeoAdminTab() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 3x-Weekly Automated Discovery Schedule Control Card */}
+      <Card className="relative overflow-hidden bg-gradient-to-r from-orange-950/40 via-gray-900/90 to-purple-950/30 border-orange-500/30 shadow-xl">
+        <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="bg-orange-500 text-white font-bold text-[10px]">
+                <Zap className="w-3 h-3 mr-1" /> 3x / Week Automated Discovery
+              </Badge>
+              <Badge variant="outline" className={schedulerStatus.config.isEnabled ? 'border-emerald-500/50 text-emerald-400 text-[10px]' : 'border-gray-700 text-gray-400 text-[10px]'}>
+                {schedulerStatus.config.isEnabled ? '🟢 Schedule Active (Mon, Wed, Fri • 04:00 UTC)' : '⚪ Schedule Paused'}
+              </Badge>
+            </div>
+
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              Automated Cinema Sync & Multi-Territory Indexing
+            </h3>
+
+            <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+              Scans YouTube & cinema channels 3 times per week across Rwanda, Uganda, Kenya, Nigeria, Ghana, Tanzania, South Africa & international cinema to automatically discover, classify, and update your web catalog.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400 pt-1">
+              <span>
+                <strong>Last Run:</strong>{' '}
+                {schedulerStatus.lastRunTimestamp
+                  ? new Date(schedulerStatus.lastRunTimestamp).toLocaleString()
+                  : 'Pending first automated run'}
+              </span>
+              <span>•</span>
+              <span>
+                <strong>Next Scheduled:</strong>{' '}
+                {new Date(schedulerStatus.nextRunTimestamp).toLocaleString()}
+              </span>
+              {schedulerProgress && (
+                <>
+                  <span>•</span>
+                  <span className="text-orange-400 font-semibold animate-pulse">
+                    {schedulerProgress}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleToggleAutoDiscoveryEnabled(!schedulerStatus.config.isEnabled)}
+              className="border-white/15 bg-white/[.04] text-xs text-slate-200 hover:bg-white/[.08] rounded-xl h-9"
+            >
+              {schedulerStatus.config.isEnabled ? (
+                <>
+                  <ToggleRight className="w-4 h-4 mr-1.5 text-emerald-400" /> Pause Schedule
+                </>
+              ) : (
+                <>
+                  <ToggleLeft className="w-4 h-4 mr-1.5 text-slate-400" /> Enable Schedule
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={handleTriggerAutoDiscovery}
+              disabled={isTriggeringScheduler || isSyncing}
+              className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-9 px-4 rounded-xl shadow-lg shadow-orange-500/20"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isTriggeringScheduler ? 'animate-spin' : ''}`} />
+              {isTriggeringScheduler ? 'Scanning All Territories...' : 'Trigger 3x-Weekly Scan Now'}
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* YouTube Cinema Discovery Control Center */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

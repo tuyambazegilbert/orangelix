@@ -45,6 +45,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { DetailHeroSkeleton, SeriesPlaylistSkeleton } from '@/components/ui/Skeletons';
+
 export default function CountryMovieDetail() {
   const { countryCode: rawCountryCode, slug, id } = useParams<{
     countryCode?: string;
@@ -255,14 +257,7 @@ export default function CountryMovieDetail() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#070b14] flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto" />
-          <p className="text-sm text-gray-400 font-medium">Loading {country.name} Cinema...</p>
-        </div>
-      </div>
-    );
+    return <DetailHeroSkeleton />;
   }
 
   if (!movie) {
@@ -358,7 +353,7 @@ export default function CountryMovieDetail() {
           <iframe
             src={embedUrl}
             title={movie.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             className="w-full h-full border-0"
           />

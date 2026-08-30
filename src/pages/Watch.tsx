@@ -40,20 +40,19 @@ const progressKey = (id: string) => `orangeflix_progress_${id}`;
 
 function WatchSkeleton() {
   return (
-    <main className="page-wrap">
-      <div className="skeleton aspect-video rounded-xl" />
-      <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_270px]">
-        <div className="space-y-4">
-          <div className="skeleton h-9 w-3/5 rounded" />
-          <div className="skeleton h-4 w-2/5 rounded" />
-          <div className="skeleton h-20 w-full rounded" />
+    <main className="page-wrap !pt-2 sm:!pt-4 max-w-6xl mx-auto px-3 sm:px-6 space-y-6 animate-pulse">
+      <div className="aspect-video w-full rounded-2xl bg-white/10 border border-white/10" />
+      <div className="space-y-4">
+        <div className="h-8 w-2/3 bg-white/20 rounded-xl" />
+        <div className="flex gap-2">
+          <div className="h-5 w-20 bg-orange-500/20 rounded" />
+          <div className="h-5 w-16 bg-white/10 rounded" />
+          <div className="h-5 w-24 bg-white/10 rounded" />
         </div>
-        <div className="skeleton h-44 rounded-xl" />
-      </div>
-      <div className="mt-8 flex gap-3">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div className="skeleton h-44 w-24 rounded-lg" key={index} />
-        ))}
+        <div className="space-y-2 pt-2">
+          <div className="h-4 w-full bg-white/10 rounded" />
+          <div className="h-4 w-5/6 bg-white/10 rounded" />
+        </div>
       </div>
     </main>
   );

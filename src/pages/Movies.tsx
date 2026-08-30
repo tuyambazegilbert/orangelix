@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Search, ChevronLeft, ChevronRight, Film, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+import { HeroSkeleton, MovieGridSkeleton } from '@/components/ui/Skeletons';
+
 export default function Movies() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,8 +69,12 @@ export default function Movies() {
   return (
     <div className="min-h-screen bg-[#080d17] text-white overflow-x-hidden">
       {/* 3D StageSlider Hero Section */}
-      {!isSearching && featuredMovies.length > 0 && (
-        <StageSlider items={featuredMovies} />
+      {!isSearching && (
+        isDiscoverLoading ? (
+          <HeroSkeleton />
+        ) : featuredMovies.length > 0 ? (
+          <StageSlider items={featuredMovies} />
+        ) : null
       )}
 
       <main className="page-wrap py-6 space-y-6">
@@ -139,11 +145,7 @@ export default function Movies() {
 
         {/* Content Grid */}
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {Array.from({ length: 18 }).map((_, index) => (
-              <div key={index} className="aspect-[2/3] bg-gray-900/60 border border-gray-800/80 rounded-2xl animate-pulse" />
-            ))}
-          </div>
+          <MovieGridSkeleton count={18} />
         ) : activeData.items.length === 0 ? (
           <div className="text-center py-20 bg-gray-900/30 rounded-3xl border border-gray-800/60 p-8 space-y-3">
             <Film className="w-12 h-12 text-gray-600 mx-auto" />

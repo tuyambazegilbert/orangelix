@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -7,6 +8,7 @@ import { ThemeProvider } from '@/hooks/use-theme';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import ScrollToTop from '@/components/ScrollToTop';
+import { AutoDiscoveryScheduler } from '@/services/auto-discovery-scheduler';
 
 // Primary Pages
 import Home from './pages/Home';
@@ -41,6 +43,13 @@ import Collections from './pages/Collections';
 import PublicProfile from './pages/PublicProfile';
 import WeatherAssistant from '@/components/weather/WeatherAssistant';
 
+// Legal, Trust & Founder Story
+import StoryBehind from './pages/StoryBehind';
+import Security from './pages/Security';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsConditions from './pages/TermsConditions';
+import Disclaimer from './pages/Disclaimer';
+
 // Geo-Located Cinema & YouTube Discovery
 import CountryMovies from './pages/CountryMovies';
 import CountryMovieDetail from './pages/CountryMovieDetail';
@@ -55,17 +64,22 @@ const queryClient = new QueryClient({
   },
 });
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider defaultTheme="dark" storageKey="orangeflix-theme">
-      <TooltipProvider>
-        <AuthProvider>
-          <Toaster />
-          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <div className="app-shell flex min-h-screen flex-col">
-              <ScrollToTop />
-              <Navbar />
-              <main className="flex-1">
+const App = () => {
+  useEffect(() => {
+    void AutoDiscoveryScheduler.init();
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider defaultTheme="dark" storageKey="orangeflix-theme">
+        <TooltipProvider>
+          <AuthProvider>
+            <Toaster />
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <div className="app-shell flex min-h-screen flex-col">
+                <ScrollToTop />
+                <Navbar />
+                <main className="flex-1">
                 <Routes>
                   {/* Core Platform */}
                   <Route path="/" element={<Home />} />
@@ -102,6 +116,15 @@ const App = () => (
                   <Route path="/collections/:slug" element={<Collections />} />
                   <Route path="/u/:username" element={<PublicProfile />} />
 
+                  {/* Legal, Trust & Founder Story */}
+                  <Route path="/story-behind" element={<StoryBehind />} />
+                  <Route path="/about" element={<StoryBehind />} />
+                  <Route path="/founder" element={<StoryBehind />} />
+                  <Route path="/security" element={<Security />} />
+                  <Route path="/privacy" element={<PrivacyPolicy />} />
+                  <Route path="/terms" element={<TermsConditions />} />
+                  <Route path="/disclaimer" element={<Disclaimer />} />
+
                   {/* Geo-Located YouTube Movie & Series Catalogs */}
                   <Route path="/:countryCode/movies" element={<CountryMovies />} />
                   <Route path="/:countryCode/series" element={<CountryMovies />} />
@@ -122,5 +145,6 @@ const App = () => (
     </ThemeProvider>
   </QueryClientProvider>
 );
+};
 
 export default App;

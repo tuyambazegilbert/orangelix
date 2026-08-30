@@ -48,78 +48,91 @@ export default function MovieDetail() {
   // Track Analytics View
   useEffect(() => {
     if (movie) {
-      Analytics.logEvent('movie_view', {
-        userId: currentUser?.id,
-        entityType: 'movie',
-        entityId: movie.tmdbId?.toString(),
-        entityTitle: movie.title,
-        metadata: { genres: movie.genres },
+      Analytics.logEvent('page_view', {
+        page_title: movie.title,
+        page_location: window.location.href,
+        content_type: 'movie',
+        item_id: String(movie.tmdbId),
       });
+    }
+  }, [movie]);
 
-      // Fetch Content Graph relations
+  // Load Content Relationships
+  useEffect(() => {
+    let isMounted = true;
+    if (movie) {
       setIsLoadingRelations(true);
-      ContentRelationships.resolveForMovie(movie.title, movie.tmdbId, movie.genres)
-        .then((data) => setRelations(data))
-        .finally(() => setIsLoadingRelations(false));
+      ContentRelationships.resolveForMovie({
+        title: movie.title,
+        tmdbId: movie.tmdbId,
+        mediaType: 'movie',
+        genres: movie.genres,
+        overview: movie.description,
+        backdropUrl: movie.backdropUrl || undefined,
+        posterUrl: movie.posterUrl || undefined,
+        releaseYear: movie.releaseYear || undefined,
+        cast: movie.cast,
+        crew: movie.crew,
+        voteAverage: movie.voteAverage,
+        voteCount: movie.voteCount,
+      })
+        .then((resolved) => {
+          if (isMounted) {
+            setRelations(resolved);
+            setIsLoadingRelations(false);
+          }
+        })
+        .catch(() => {
+          if (isMounted) setIsLoadingRelations(false);
+        });
     }
-  }, [movie, currentUser]);
+    return () => {
+      isMounted = false;
+    };
+  }, [movie]);
 
-  const rawId = movieId ? `movie-${movieId}` : '';
-  const isFav = currentUser && rawId ? MovieService.isFavorite(rawId, currentUser.id) : false;
-  const isInLater = currentUser && rawId ? MovieService.isInWatchLater(rawId, currentUser.id) : false;
-
-  const toggleFavorite = () => {
-    if (!currentUser || !movie) {
-      toast.error('Please login to add favorites');
-      return;
-    }
-
-    if (isFav) {
-      MovieService.removeFromFavorites(rawId, currentUser.id);
-      void FirebaseData.removeFavorites(currentUser.id, rawId);
-      Analytics.logEvent('favorite_remove', { userId: currentUser.id, entityId: rawId, entityTitle: movie.title });
-      toast.success('Removed from favorites');
+  const handleToggleFavorite = () => {
+    if (!movie) return;
+    const rawId = `movie-${movie.tmdbId}`;
+    if (MovieService.isFavorite(rawId, currentUser?.id)) {
+      MovieService.removeFromFavorites(rawId, currentUser?.id);
+      if (currentUser) void FirebaseData.removeFavorites(currentUser.id, rawId);
+      Analytics.logEvent('favorite_remove', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
+      toast.success('Removed from Favorites');
     } else {
-      MovieService.addToFavorites(rawId, currentUser.id, {
+      MovieService.addToFavorites(rawId, currentUser?.id, {
         tmdbId: movie.tmdbId,
         mediaType: 'movie',
         cachedMedia: movie,
       });
-      void FirebaseData.setFavorites(currentUser.id, movie);
-      Analytics.logEvent('favorite_add', { userId: currentUser.id, entityId: rawId, entityTitle: movie.title });
-      toast.success('Added to favorites');
+      if (currentUser) void FirebaseData.setFavorites(currentUser.id, movie);
+      Analytics.logEvent('favorite_add', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
+      toast.success('Added to Favorites');
     }
   };
 
-  const toggleWatchLater = () => {
-    if (!currentUser || !movie) {
-      toast.error('Please login to add to watch later');
-      return;
-    }
-
-    if (isInLater) {
-      MovieService.removeFromWatchLater(rawId, currentUser.id);
-      void FirebaseData.removeWatchlist(currentUser.id, rawId);
+  const handleToggleWatchlist = () => {
+    if (!movie) return;
+    const rawId = `movie-${movie.tmdbId}`;
+    if (MovieService.isInWatchLater(rawId, currentUser?.id)) {
+      MovieService.removeFromWatchLater(rawId, currentUser?.id);
+      if (currentUser) void FirebaseData.removeWatchlist(currentUser.id, rawId);
+      Analytics.logEvent('watchlater_remove', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
       toast.success('Removed from Watch Later');
     } else {
-      MovieService.addToWatchLater(rawId, currentUser.id, {
+      MovieService.addToWatchLater(rawId, currentUser?.id, {
         tmdbId: movie.tmdbId,
         mediaType: 'movie',
         cachedMedia: movie,
       });
-      void FirebaseData.setWatchlist(currentUser.id, movie);
-      Analytics.logEvent('watchlater_add', { userId: currentUser.id, entityId: rawId, entityTitle: movie.title });
+      if (currentUser) void FirebaseData.setWatchlist(currentUser.id, movie);
+      Analytics.logEvent('watchlater_add', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
       toast.success('Added to Watch Later');
     }
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-500 mb-4" />
-        <p className="text-gray-400">Loading cinema metadata...</p>
-      </div>
-    );
+    return <DetailHeroSkeleton />;
   }
 
   if (error || !movie) {

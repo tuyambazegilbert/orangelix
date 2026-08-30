@@ -11,6 +11,8 @@ import GeoCountryShowcase from '@/components/geo/GeoCountryShowcase';
 import { getAllCountries } from '@/features/geo/countryConfig';
 import { toast } from 'sonner';
 
+import { HeroSkeleton, MovieGridSkeleton } from '@/components/ui/Skeletons';
+
 export default function Trending() {
   const navigate = useNavigate();
   const [type, setType] = useState<'all' | 'movie' | 'tv'>('all');
@@ -26,7 +28,11 @@ export default function Trending() {
   return (
     <div className="min-h-screen bg-[#080d17] text-white overflow-x-hidden">
       {/* 3D StageSlider Hero Section */}
-      {featured.length > 0 && <StageSlider items={featured} />}
+      {query.isLoading ? (
+        <HeroSkeleton />
+      ) : featured.length > 0 ? (
+        <StageSlider items={featured} />
+      ) : null}
 
       <main className="page-wrap py-6 space-y-6">
         <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -70,11 +76,7 @@ export default function Trending() {
         </header>
 
         {query.isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {Array.from({ length: 18 }).map((_, index) => (
-              <div key={index} className="aspect-[2/3] bg-gray-900/60 border border-gray-800/80 rounded-2xl animate-pulse" />
-            ))}
-          </div>
+          <MovieGridSkeleton count={18} />
         ) : items.length > 0 ? (
           <section className="space-y-4">
             <div className="content-grid">

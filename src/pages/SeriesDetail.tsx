@@ -32,6 +32,8 @@ import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { PROFILE_FALLBACK, POSTER_FALLBACK, BACKDROP_FALLBACK } from '@/lib/tmdb/images';
 
+import { DetailHeroSkeleton } from '@/components/ui/Skeletons';
+
 export default function SeriesDetail() {
   const { id } = useParams<{ id: string }>();
   const { currentUser } = useAuth();
@@ -39,6 +41,7 @@ export default function SeriesDetail() {
   const { data: series, isLoading, error } = useSeriesDetails(seriesId);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [showTrailer, setShowTrailer] = useState(false);
+  const { data: seasonData } = useSeasonDetails(seriesId, selectedSeason);
 
   // Content Graph State
   const [relations, setRelations] = useState<ContentEntityRelations>({
@@ -48,28 +51,37 @@ export default function SeriesDetail() {
   });
   const [isLoadingRelations, setIsLoadingRelations] = useState(true);
 
-  // Track Analytics View & Fetch Content Graph relations
+  // Track Analytics View
   useEffect(() => {
     if (series) {
-      Analytics.logEvent('series_view', {
+      Analytics.logEvent('tv_view', {
         userId: currentUser?.id,
-        entityType: 'series',
+        entityType: 'tv',
         entityId: series.tmdbId?.toString(),
         entityTitle: series.title,
         metadata: { genres: series.genres },
       });
 
+      // Fetch Content Graph relations
       setIsLoadingRelations(true);
-      ContentRelationships.resolveForMovie(series.title, series.tmdbId, series.genres)
+      ContentRelationships.resolveForMovie({
+        title: series.title,
+        tmdbId: series.tmdbId,
+        mediaType: 'tv',
+        genres: series.genres,
+        overview: series.description,
+        backdropUrl: series.backdropUrl || undefined,
+        posterUrl: series.posterUrl || undefined,
+        releaseYear: series.releaseYear || undefined,
+        cast: series.cast,
+        crew: series.crew,
+        voteAverage: series.voteAverage,
+        voteCount: series.voteCount,
+      })
         .then((data) => setRelations(data))
         .finally(() => setIsLoadingRelations(false));
     }
   }, [series, currentUser]);
-
-  const { data: episodes, isLoading: isEpisodesLoading } = useSeasonDetails(
-    seriesId,
-    selectedSeason
-  );
 
   const rawId = seriesId ? `tv-${seriesId}` : '';
   const isFav = currentUser && rawId ? MovieService.isFavorite(rawId, currentUser.id) : false;
@@ -107,7 +119,7 @@ export default function SeriesDetail() {
     if (isInLater) {
       MovieService.removeFromWatchLater(rawId, currentUser.id);
       void FirebaseData.removeWatchlist(currentUser.id, rawId);
-      Analytics.logEvent('watchlater_add', { userId: currentUser.id, entityId: rawId, entityTitle: series.title });
+      Analytics.logEvent('watchlater_remove', { userId: currentUser.id, entityId: rawId, entityTitle: series.title });
       toast.success('Removed from Watch Later');
     } else {
       MovieService.addToWatchLater(rawId, currentUser.id, {
@@ -122,12 +134,7 @@ export default function SeriesDetail() {
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-500 mb-4" />
-        <p className="text-gray-400">Loading series details...</p>
-      </div>
-    );
+    return <DetailHeroSkeleton />;
   }
 
   if (error || !series) {

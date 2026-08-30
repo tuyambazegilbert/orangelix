@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { FormEvent, useEffect, useState, useMemo } from 'react';
+import { FormEvent, useEffect, useState, useMemo, useRef } from 'react';
 import {
   Bookmark,
   ChevronDown,
@@ -20,9 +20,14 @@ import {
   Grid,
   Heart,
   SlidersHorizontal,
+  ArrowRight,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAllCountries, getCountryConfig } from '@/features/geo/countryConfig';
+import { GeoContentService } from '@/services/geo-content-service';
+import { GeoContentItem } from '@/types/geo-content';
+import { tmdbClient } from '@/lib/tmdb/client';
+import { tmdbEndpoints } from '@/lib/tmdb/endpoints';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +57,18 @@ const primaryLinks = [
   { to: '/music', label: 'Soundtracks', icon: Music2 },
 ];
 
+interface QuickTmdbMatch {
+  id: number;
+  media_type?: string;
+  title?: string;
+  name?: string;
+  poster_path?: string;
+  backdrop_path?: string;
+  release_date?: string;
+  first_air_date?: string;
+  vote_average?: number;
+}
+
 export default function Navbar() {
   const { currentUser, logout, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -59,6 +76,15 @@ export default function Navbar() {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+
+  // Live Quick Search State
+  const [isDesktopFocused, setIsDesktopFocused] = useState(false);
+  const [isMobileFocused, setIsMobileFocused] = useState(false);
+  const [quickGeoMatches, setQuickGeoMatches] = useState<GeoContentItem[]>([]);
+  const [quickTmdbMatches, setQuickTmdbMatches] = useState<QuickTmdbMatch[]>([]);
+  const [isSearchingQuick, setIsSearchingQuick] = useState(false);
+  const desktopSearchRef = useRef<HTMLDivElement>(null);
+  const mobileSearchRef = useRef<HTMLDivElement>(null);
 
   const countries = useMemo(() => getAllCountries(), []);
 
@@ -77,6 +103,67 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', update);
   }, []);
 
+  // Close search popups on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (desktopSearchRef.current && !desktopSearchRef.current.contains(e.target as Node)) {
+        setIsDesktopFocused(false);
+      }
+      if (mobileSearchRef.current && !mobileSearchRef.current.contains(e.target as Node)) {
+        setIsMobileFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Live Quick Search Debounced Query
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setQuickGeoMatches([]);
+      setQuickTmdbMatches([]);
+      setIsSearchingQuick(false);
+      return;
+    }
+
+    let current = true;
+    setIsSearchingQuick(true);
+
+    const timer = setTimeout(() => {
+      // 1. Search Geo Cinema
+      GeoContentService.searchAllCinematicMovies(trimmed, 4)
+        .then((geo) => {
+          if (current) setQuickGeoMatches(geo);
+        })
+        .catch(() => {});
+
+      // 2. Search TMDB
+      if (tmdbClient.hasToken()) {
+        tmdbClient.get<{ results: QuickTmdbMatch[] }>(tmdbEndpoints.searchMulti, { query: trimmed, page: 1 })
+          .then((res) => {
+            if (current) {
+              const filtered = (res.results || [])
+                .filter((i) => (i.media_type === 'movie' || i.media_type === 'tv') && (i.poster_path || i.backdrop_path))
+                .slice(0, 3);
+              setQuickTmdbMatches(filtered);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (current) setIsSearchingQuick(false);
+          });
+      } else {
+        if (current) setIsSearchingQuick(false);
+      }
+    }, 200);
+
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
   useEffect(() => {
     if (location.pathname !== '/search') return;
     setQuery(new URLSearchParams(location.search).get('q') || '');
@@ -85,6 +172,8 @@ export default function Navbar() {
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     const nextQuery = query.trim();
+    setIsDesktopFocused(false);
+    setIsMobileFocused(false);
     navigate(nextQuery ? `/search?q=${encodeURIComponent(nextQuery)}` : '/search');
     setOpen(false);
   };
@@ -234,18 +323,156 @@ export default function Navbar() {
             </NavLink>
           </nav>
 
-          {/* Search Bar */}
-          <form onSubmit={submitSearch} className="ml-auto hidden w-full max-w-xs md:block">
-            <label className="relative block">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search movies, cinema, genres..."
-                className="h-9 w-full rounded-xl border border-white/[.09] bg-white/[.05] pl-9 pr-3 text-xs text-white placeholder:text-slate-500 outline-none transition focus:border-orange-400/60 focus:bg-white/[.08]"
-              />
-            </label>
-          </form>
+          {/* Search Bar with Live Quick Discovery Popover */}
+          <div ref={desktopSearchRef} className="ml-auto hidden w-full max-w-xs md:block relative">
+            <form onSubmit={submitSearch}>
+              <label className="relative block">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onFocus={() => setIsDesktopFocused(true)}
+                  placeholder="Search movies, African cinema, genres..."
+                  className="h-9 w-full rounded-xl border border-white/[.09] bg-white/[.05] pl-9 pr-3 text-xs text-white placeholder:text-slate-500 outline-none transition focus:border-orange-400/60 focus:bg-white/[.08]"
+                />
+              </label>
+            </form>
+
+            {/* Quick Discovery Dropdown */}
+            {isDesktopFocused && query.trim().length >= 2 && (
+              <div className="absolute right-0 top-full mt-2 w-[380px] rounded-2xl bg-[#090e1a]/98 border border-white/[.12] p-2.5 shadow-2xl backdrop-blur-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="max-h-[70vh] overflow-y-auto space-y-3 scrollbar-none">
+                  {/* 1. African & Global Geo Cinema Section */}
+                  {quickGeoMatches.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-orange-400 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Globe className="w-3 h-3" /> Geo Cinema ({quickGeoMatches.length})
+                        </span>
+                        <span className="text-[9px] text-gray-400 font-normal">Direct Stream</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        {quickGeoMatches.map((item) => {
+                          const cCode = (item.country || item.countryCode || 'RW').toLowerCase();
+                          const cConfig = getCountryConfig(cCode.toUpperCase());
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                navigate(`/${cCode}/movies/${item.slug || item.id}`);
+                                setIsDesktopFocused(false);
+                                setQuery('');
+                              }}
+                              className="w-full flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[.08] transition text-left group"
+                            >
+                              <div className="w-14 h-9 rounded-lg overflow-hidden bg-gray-900 shrink-0 relative">
+                                <img
+                                  src={item.thumbnailUrl || item.posterUrl || `https://i.ytimg.com/vi/${item.youtubeVideoId}/hqdefault.jpg`}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition"
+                                />
+                                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-white truncate group-hover:text-orange-400 transition">
+                                  {item.title}
+                                </p>
+                                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5">
+                                  <span>{cConfig.flagEmoji} {cConfig.name}</span>
+                                  {item.durationFormatted && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{item.durationFormatted}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. TMDB Movies & Series Section */}
+                  {quickTmdbMatches.length > 0 && (
+                    <div className="space-y-1 pt-1 border-t border-white/[.06]">
+                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Film className="w-3 h-3 text-orange-400" /> Movies & TV Series
+                      </div>
+
+                      <div className="space-y-1">
+                        {quickTmdbMatches.map((item: QuickTmdbMatch) => {
+                          const isTv = item.media_type === 'tv' || !item.title;
+                          const title = item.title || item.name;
+                          const path = isTv ? `/series/${item.id}` : `/movie/${item.id}`;
+                          const poster = item.poster_path
+                            ? `https://image.tmdb.org/t/p/w92${item.poster_path}`
+                            : undefined;
+                          const year = (item.release_date || item.first_air_date || '').split('-')[0];
+
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                navigate(path);
+                                setIsDesktopFocused(false);
+                                setQuery('');
+                              }}
+                              className="w-full flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[.08] transition text-left group"
+                            >
+                              <div className="w-8 h-11 rounded-lg overflow-hidden bg-gray-900 shrink-0">
+                                {poster ? (
+                                  <img src={poster} alt={title} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[9px] text-gray-500">🎬</div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-white truncate group-hover:text-orange-400 transition">
+                                  {title}
+                                </p>
+                                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5">
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 border-gray-700">
+                                    {isTv ? 'TV' : 'Movie'}
+                                  </Badge>
+                                  {year && <span>{year}</span>}
+                                  {item.vote_average ? (
+                                    <span className="text-amber-400 font-semibold">★ {Number(item.vote_average).toFixed(1)}</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* If searching */}
+                  {isSearchingQuick && quickGeoMatches.length === 0 && quickTmdbMatches.length === 0 && (
+                    <div className="p-4 text-center text-xs text-gray-400">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-500 mx-auto mb-1.5" />
+                      Discovering cinema & movies...
+                    </div>
+                  )}
+
+                  {/* Footer Link to View All */}
+                  <button
+                    type="button"
+                    onClick={submitSearch}
+                    className="w-full text-center py-2 mt-1 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs font-bold transition flex items-center justify-center gap-1 border border-orange-500/20"
+                  >
+                    <span>View all results for "{query}"</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Location Quick Switcher for tablet/laptop */}
           <div className="hidden lg:flex xl:hidden items-center">
@@ -358,18 +585,110 @@ export default function Navbar() {
         {/* Scalable, Comprehensive Mobile Drawer with all links */}
         {open && (
           <div className="border-t border-white/[.08] bg-[#090e1a]/98 px-4 py-4 xl:hidden max-h-[85vh] overflow-y-auto space-y-4 shadow-2xl backdrop-blur-2xl animate-in slide-in-from-top-2 duration-200">
-            {/* Search in Drawer */}
-            <form onSubmit={submitSearch} className="block w-full">
-              <label className="relative block">
-                <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search movies, cinema, shows..."
-                  className="h-10 w-full rounded-xl border border-white/[.12] bg-white/[.06] pl-10 pr-3 text-xs text-white placeholder:text-slate-400 outline-none focus:border-orange-500"
-                />
-              </label>
-            </form>
+            {/* Search in Drawer with Live Quick Discovery */}
+            <div ref={mobileSearchRef} className="block w-full relative">
+              <form onSubmit={submitSearch} className="block w-full">
+                <label className="relative block">
+                  <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onFocus={() => setIsMobileFocused(true)}
+                    placeholder="Search movies, African cinema, shows..."
+                    className="h-10 w-full rounded-xl border border-white/[.12] bg-white/[.06] pl-10 pr-3 text-xs text-white placeholder:text-slate-400 outline-none focus:border-orange-500"
+                  />
+                </label>
+              </form>
+
+              {/* Mobile Quick Discovery Results */}
+              {isMobileFocused && query.trim().length >= 2 && (
+                <div className="mt-2 w-full rounded-2xl bg-[#090e1a]/98 border border-white/[.12] p-2.5 shadow-2xl backdrop-blur-2xl space-y-3">
+                  {/* Geo Cinema */}
+                  {quickGeoMatches.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-orange-400 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Globe className="w-3 h-3" /> Geo Cinema ({quickGeoMatches.length})
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {quickGeoMatches.map((item) => {
+                          const cCode = (item.country || item.countryCode || 'RW').toLowerCase();
+                          const cConfig = getCountryConfig(cCode.toUpperCase());
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                navigate(`/${cCode}/movies/${item.slug || item.id}`);
+                                setIsMobileFocused(false);
+                                setOpen(false);
+                                setQuery('');
+                              }}
+                              className="w-full flex items-center gap-2 p-1.5 rounded-xl hover:bg-white/[.08] text-left"
+                            >
+                              <img
+                                src={item.thumbnailUrl || item.posterUrl || `https://i.ytimg.com/vi/${item.youtubeVideoId}/hqdefault.jpg`}
+                                alt={item.title}
+                                className="w-12 h-8 rounded-lg object-cover bg-gray-900 shrink-0"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-white truncate">{item.title}</p>
+                                <p className="text-[10px] text-gray-400">{cConfig.flagEmoji} {cConfig.name}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TMDB Matches */}
+                  {quickTmdbMatches.length > 0 && (
+                    <div className="space-y-1 pt-1 border-t border-white/[.06]">
+                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Film className="w-3 h-3 text-orange-400" /> Movies & TV Series
+                      </div>
+                      <div className="space-y-1">
+                        {quickTmdbMatches.map((item: QuickTmdbMatch) => {
+                          const isTv = item.media_type === 'tv' || !item.title;
+                          const title = item.title || item.name;
+                          const path = isTv ? `/series/${item.id}` : `/movie/${item.id}`;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                navigate(path);
+                                setIsMobileFocused(false);
+                                setOpen(false);
+                                setQuery('');
+                              }}
+                              className="w-full flex items-center gap-2 p-1.5 rounded-xl hover:bg-white/[.08] text-left"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-white truncate">{title}</p>
+                                <span className="text-[10px] text-gray-400">{isTv ? 'TV Show' : 'Movie'}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* View all button */}
+                  <button
+                    type="button"
+                    onClick={submitSearch}
+                    className="w-full text-center py-2 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs font-bold flex items-center justify-center gap-1 border border-orange-500/20"
+                  >
+                    <span>View all results for "{query}"</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Sleek Country Dropdown in Mobile Drawer */}
             <div className="space-y-2 p-3 bg-black/40 border border-white/10 rounded-2xl">

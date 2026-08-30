@@ -140,21 +140,16 @@ const GENRE_SLUG_MAP: Record<string, { id: string; name: string; description: st
 };
 
 export default function Genres() {
-  const navigate = useNavigate();
   const { slug } = useParams<{ slug?: string }>();
-  const normalizedSlug = slug ? slug.toLowerCase() : 'all';
-  
-  const genreInfo = GENRE_SLUG_MAP[normalizedSlug] || {
-    id: '',
-    name: slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : 'All Genres',
-    description: 'Discover popular titles in this genre on OrangeFlix.',
-    emoji: '🎬',
-  };
-
-  const countries = useMemo(() => getAllCountries(), []);
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('popularity.desc');
+  const countries = useMemo(() => getAllCountries(), []);
 
+  const normalizedSlug = (slug || 'all').toLowerCase();
+  const genreInfo = GENRE_SLUG_MAP[normalizedSlug] || GENRE_SLUG_MAP['all'];
+
+  // Discover movies for this genre
   const { data: discoverData, isLoading } = useDiscoverMovies({
     with_genres: genreInfo.id || undefined,
     sort_by: sortBy,
@@ -174,7 +169,11 @@ export default function Genres() {
       />
 
       {/* 3D StageSlider Hero Section */}
-      {featuredItems.length > 0 && <StageSlider items={featuredItems} />}
+      {isLoading ? (
+        <HeroSkeleton />
+      ) : featuredItems.length > 0 ? (
+        <StageSlider items={featuredItems} />
+      ) : null}
 
       <main className="page-wrap py-6 space-y-6">
         <Breadcrumbs
@@ -261,11 +260,7 @@ export default function Genres() {
 
         {/* Media Grid */}
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {Array.from({ length: 18 }).map((_, index) => (
-              <div key={index} className="aspect-[2/3] bg-gray-900/60 border border-gray-800/80 rounded-2xl animate-pulse" />
-            ))}
-          </div>
+          <MovieGridSkeleton count={18} />
         ) : items.length === 0 ? (
           <div className="text-center py-20 bg-gray-900/30 rounded-3xl border border-gray-800/60 p-8 space-y-3">
             <Film className="w-12 h-12 text-gray-600 mx-auto" />

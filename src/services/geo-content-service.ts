@@ -64,6 +64,8 @@ const memoryCache = new Map<string, GeoContentItem>();
 const summaryLogsMap = new Map<string, DiscoverySummaryLog>();
 const trustedChannelsMemory: TrustedChannel[] = [...INITIAL_TRUSTED_CHANNELS];
 const customQueriesMemory = new Map<string, CustomCountryQuery[]>();
+const countryLastFetchedMap = new Map<string, number>();
+const COUNTRY_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache TTL
 let lastDiscoveryTimestamp = 0; // For rate limiting (30s interval)
 let isHydratedFromLocal = false;
 
@@ -148,21 +150,38 @@ function persistLocalCache(): void {
 }
 
 export const GeoContentService = {
-  /** Fetch movie catalog for a specific country with flexible filters (Sections 9, 10, 18) */
-  async getMoviesByCountry(filter: GeoContentFilter): Promise<{ items: GeoContentItem[]; total: number }> {
+  /** Invalidate cache for a specific country or all countries (e.g. on new scans/discovery) */
+  invalidateCache(countryCode?: string): void {
+    if (countryCode) {
+      countryLastFetchedMap.delete(countryCode.toUpperCase());
+    } else {
+      countryLastFetchedMap.clear();
+    }
+  },
+
+  /** Fetch movie catalog for a specific country with intelligent caching & fast memory hits */
+  async getMoviesByCountry(
+    filter: GeoContentFilter & { forceRefresh?: boolean }
+  ): Promise<{ items: GeoContentItem[]; total: number }> {
     hydrateLocalCache();
     const countryCode = (filter.countryCode || 'RW').toUpperCase();
     const page = filter.page || 1;
     const limitCount = filter.limit || 20;
 
-    // 1. Read from Firestore
-    try {
-      if (firestore) {
+    const lastFetched = countryLastFetchedMap.get(countryCode) || 0;
+    const isCacheFresh = Date.now() - lastFetched < COUNTRY_CACHE_TTL_MS;
+    const hasCachedCountryItems = Array.from(memoryCache.values()).some(
+      (item) => (item.country || item.countryCode || 'RW').toUpperCase() === countryCode
+    );
+
+    // 1. Sync from Firestore only if cache is expired or forceRefresh is true or cold start
+    if ((!isCacheFresh || !hasCachedCountryItems || filter.forceRefresh) && firestore) {
+      try {
         const contentRef = collection(firestore, 'geoContent');
         const q = query(
           contentRef,
           where('country', '==', countryCode),
-          firestoreLimit(100)
+          firestoreLimit(150)
         );
 
         const snap = await getDocs(q);
@@ -176,11 +195,12 @@ export const GeoContentService = {
           });
           persistLocalCache();
         }
-      }
-    } catch (err: unknown) {
-      const errStr = String(err);
-      if (!errStr.includes('insufficient permissions')) {
-        console.warn('[GeoContentService] Firestore read fallback to local cache:', err);
+        countryLastFetchedMap.set(countryCode, Date.now());
+      } catch (err: unknown) {
+        const errStr = String(err);
+        if (!errStr.includes('insufficient permissions')) {
+          console.warn('[GeoContentService] Firestore read fallback to local cache:', err);
+        }
       }
     }
 
@@ -402,6 +422,74 @@ export const GeoContentService = {
     }
 
     return res.items;
+  },
+
+  /** Search across ALL countries and territories for cinematic geo movies (0 external API cost) */
+  async searchAllCinematicMovies(searchQuery: string, limit: number = 30): Promise<GeoContentItem[]> {
+    hydrateLocalCache();
+    const sq = (searchQuery || '').trim().toLowerCase();
+    if (!sq) return [];
+
+    // Ensure all supported countries are warmed in memoryCache if cache is cold
+    if (memoryCache.size < 5 && firestore) {
+      try {
+        const contentRef = collection(firestore, 'geoContent');
+        const q = query(contentRef, firestoreLimit(250));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          snap.docs.forEach((d) => {
+            const data = d.data() as GeoContentItem;
+            if (data && data.id) {
+              memoryCache.set(data.id, data);
+              if (data.slug) memoryCache.set(data.slug, data);
+            }
+          });
+          persistLocalCache();
+        }
+      } catch {
+        // Fallback to local memory cache
+      }
+    }
+
+    const tokens = sq.split(/\s+/).filter(Boolean);
+
+    const matches = Array.from(memoryCache.values()).filter((item) => {
+      if (!item || !item.id || item.status === 'unavailable') return false;
+      if (item.status && item.status !== 'published' && item.moderationStatus !== 'approved') return false;
+
+      const title = (item.title || '').toLowerCase();
+      const desc = (item.description || '').toLowerCase();
+      const channel = (item.channelTitle || '').toLowerCase();
+      const countryCode = (item.country || item.countryCode || '').toLowerCase();
+      const countryName = (item.countryName || getCountryConfig(countryCode.toUpperCase()).name || '').toLowerCase();
+      const tags = (item.tags || []).map((t) => t.toLowerCase());
+      const categories = (item.categories || []).map((c) => c.toLowerCase());
+      const language = (item.language || '').toLowerCase();
+
+      const fullText = `${title} ${desc} ${channel} ${countryCode} ${countryName} ${tags.join(' ')} ${categories.join(' ')} ${language}`;
+
+      return tokens.every((token) => fullText.includes(token));
+    });
+
+    // Deduplicate
+    const unique = Array.from(new Map(matches.map((item) => [item.id, item])).values());
+
+    // Score relevance
+    unique.sort((a, b) => {
+      const titleA = (a.title || '').toLowerCase();
+      const titleB = (b.title || '').toLowerCase();
+
+      const exactTitleA = titleA.includes(sq) ? (titleA.startsWith(sq) ? 3 : 2) : 0;
+      const exactTitleB = titleB.includes(sq) ? (titleB.startsWith(sq) ? 3 : 2) : 0;
+
+      if (exactTitleA !== exactTitleB) return exactTitleB - exactTitleA;
+
+      const viewsA = Number(a.views ?? a.viewCount ?? 0);
+      const viewsB = Number(b.views ?? b.viewCount ?? 0);
+      return viewsB - viewsA;
+    });
+
+    return unique.slice(0, limit);
   },
 
   /** Search local indexed catalog (0 YouTube API requests) */

@@ -56,6 +56,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { HeroSkeleton, ContentRailSkeleton, MovieGridSkeleton } from '@/components/ui/Skeletons';
+
 type CatalogTab = 'rails' | 'full_movies' | 'popular' | 'latest' | 'series' | 'episodes' | 'all';
 type DurationRange = 'all' | 'under_20' | '20_45' | '45_90' | '90_plus';
 
@@ -225,10 +227,13 @@ export default function CountryMovies() {
         );
       }
 
+      GeoContentService.invalidateCache(countryCode);
+
       // Reload catalog and hero
       const refreshed = await GeoContentService.getMoviesByCountry({
         countryCode,
         status: 'published',
+        forceRefresh: true,
         limit: 100,
       });
       const allRes = await GeoContentService.getMoviesByCountry({ countryCode, status: 'all', limit: 150 });
@@ -324,14 +329,18 @@ export default function CountryMovies() {
       />
 
       {/* 3D StageSlider Hero (Matching Home Landing Page Hero) */}
-      <CountryStageSlider
-        items={featuredMovies.length > 0 ? featuredMovies : movies.slice(0, 6)}
-        country={country}
-        language={language}
-        allCountries={allCountries}
-        onCountryChange={handleCountryChange}
-        onLanguageChange={handleLanguageChange}
-      />
+      {isLoading && featuredMovies.length === 0 && movies.length === 0 ? (
+        <HeroSkeleton />
+      ) : (
+        <CountryStageSlider
+          items={featuredMovies.length > 0 ? featuredMovies : movies.slice(0, 6)}
+          country={country}
+          language={language}
+          allCountries={allCountries}
+          onCountryChange={handleCountryChange}
+          onLanguageChange={handleLanguageChange}
+        />
+      )}
 
       <main className="page-wrap py-6 max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
         <Breadcrumbs
@@ -356,9 +365,7 @@ export default function CountryMovies() {
                 {country.name} Cinema Catalog
               </h1>
             </div>
-            <p className="text-xs sm:text-sm text-gray-400">
-              Curated full movies, series & cultural storytelling from {country.name} discovered on YouTube.
-            </p>
+            
           </div>
 
           {/* Quick Category / Navigation Tabs */}
@@ -402,60 +409,59 @@ export default function CountryMovies() {
           </div>
         </div>
 
-        {/* Filter Controls & Search Bar */}
-        <section className="space-y-3 p-4 bg-gray-900/40 border border-gray-800/80 rounded-2xl">
-          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+        {/* Filters and Controls */}
+        <section className="space-y-4">
+          <div className="p-4 rounded-2xl bg-gray-900/60 border border-gray-800/80 flex flex-col md:flex-row md:items-center gap-4">
             {/* Search Input */}
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 type="search"
+                placeholder={t.searchPlaceholder(country.name)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t.searchPlaceholder(country.name)}
-                className="pl-9 bg-gray-950 border-gray-800 text-xs text-white h-10 rounded-xl focus:border-orange-500"
+                className="pl-10 bg-gray-950 border-gray-800 text-white placeholder-gray-500 rounded-xl text-xs h-10 focus:border-orange-500"
               />
             </div>
 
-            {/* Duration Range Selector */}
-            <Select
-              value={durationRange}
-              onValueChange={(v) => setDurationRange(v as DurationRange)}
-            >
-              <SelectTrigger className="w-full sm:w-[160px] bg-gray-950 border-gray-800 text-xs text-white h-10 rounded-xl">
-                <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
-                <SelectValue placeholder="Duration" />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                <SelectItem value="all" className="text-xs">All Durations</SelectItem>
-                <SelectItem value="under_20" className="text-xs">Shorts (&lt; 20m)</SelectItem>
-                <SelectItem value="20_45" className="text-xs">Mini (20–45m)</SelectItem>
-                <SelectItem value="45_90" className="text-xs">Feature (45–90m)</SelectItem>
-                <SelectItem value="90_plus" className="text-xs">Full Length (90m+)</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Duration Filter Dropdown */}
+            <div className="flex items-center space-x-2">
+              <Select value={durationRange} onValueChange={(v) => setDurationRange(v as DurationRange)}>
+                <SelectTrigger className="w-full md:w-44 bg-gray-950 border-gray-800 text-white rounded-xl text-xs h-10">
+                  <Clock className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
+                  <SelectValue placeholder={t.allDurations} />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                  <SelectItem value="all">{t.allDurations}</SelectItem>
+                  <SelectItem value="under_20">{t.shortLength}</SelectItem>
+                  <SelectItem value="20_45">{t.mediumLength}</SelectItem>
+                  <SelectItem value="45_90">Standard (45-90m)</SelectItem>
+                  <SelectItem value="90_plus">{t.featureLength}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            {/* Reset Filters */}
-            {isFiltered && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedCategory('all');
-                  setDurationRange('all');
-                }}
-                className="text-xs text-orange-400 hover:bg-orange-500/10 h-10 rounded-xl px-3"
-              >
-                Reset
-              </Button>
-            )}
+            {/* Language Switcher */}
+            <div className="flex items-center space-x-2">
+              <Select value={language} onValueChange={handleLanguageChange}>
+                <SelectTrigger className="w-full md:w-36 bg-gray-950 border-gray-800 text-white rounded-xl text-xs h-10">
+                  <Globe className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                  <SelectItem value="rw">🇷🇼 Kinyarwanda</SelectItem>
+                  <SelectItem value="en">🇬🇧 English</SelectItem>
+                  <SelectItem value="fr">🇫🇷 Français</SelectItem>
+                  <SelectItem value="sw">🇹🇿 Kiswahili</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Quick Search Categories & Tags */}
+          {/* Quick Categories Bar */}
           {country.popularCategories && country.popularCategories.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] text-gray-400 flex items-center gap-1 font-semibold mr-1">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <span className="text-xs font-semibold text-gray-400 mr-1 flex items-center gap-1">
                 <Tag className="w-3 h-3 text-orange-400" /> Categories:
               </span>
               <button
@@ -463,7 +469,7 @@ export default function CountryMovies() {
                 className={`text-xs px-3 py-1 rounded-full border transition-all ${
                   selectedCategory === 'all'
                     ? 'bg-orange-500 text-white border-orange-500 font-semibold shadow-sm'
-                    : 'bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-white'
+                    : 'bg-gray-950 text-gray-400 border-gray-800 hover:border-orange-500/40 hover:text-white'
                 }`}
               >
                 All
@@ -487,67 +493,76 @@ export default function CountryMovies() {
 
         {/* MODE 1: FEATURED CATEGORIZED RAILS (When not actively filtering with keyword) */}
         {!isFiltered && activeTab === 'rails' && (
-          <div className="space-y-6">
-            {/* 1. RECOMMENDED FOR YOU (ON TOP) */}
-            <GeoContentRail
-              title="Recommended for you"
-              eyebrow="Personalized Cinema Picks"
-              icon={<Star className="w-3 h-3 text-amber-400 fill-current" />}
-              items={recommendedMovies.length > 0 ? recommendedMovies : movies.slice(0, 8)}
-              countryCode={countryCode}
-              onSeeAll={() => setActiveTab('all')}
-            />
+          isLoading && movies.length === 0 ? (
+            <div className="space-y-6">
+              <ContentRailSkeleton title="Recommended for you" />
+              <ContentRailSkeleton title="New Releases" />
+              <ContentRailSkeleton title="Trending" />
+              <ContentRailSkeleton title="Popular" />
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* 1. RECOMMENDED FOR YOU (ON TOP) */}
+              <GeoContentRail
+                title="Recommended for you"
+                eyebrow="Personalized Cinema Picks"
+                icon={<Star className="w-3 h-3 text-amber-400 fill-current" />}
+                items={recommendedMovies.length > 0 ? recommendedMovies : movies.slice(0, 8)}
+                countryCode={countryCode}
+                onSeeAll={() => setActiveTab('all')}
+              />
 
-            {/* 2. NEW RELEASES */}
-            <GeoContentRail
-              title="New Releases"
-              eyebrow="Freshly Uploaded & Discovered"
-              icon={<Clock className="w-3 h-3 text-cyan-400" />}
-              items={newReleases.length > 0 ? newReleases : movies.slice(0, 8)}
-              countryCode={countryCode}
-              onSeeAll={() => setActiveTab('latest')}
-            />
+              {/* 2. NEW RELEASES */}
+              <GeoContentRail
+                title="New Releases"
+                eyebrow="Freshly Uploaded & Discovered"
+                icon={<Clock className="w-3 h-3 text-cyan-400" />}
+                items={newReleases.length > 0 ? newReleases : movies.slice(0, 8)}
+                countryCode={countryCode}
+                onSeeAll={() => setActiveTab('latest')}
+              />
 
-            {/* 3. TRENDING */}
-            <GeoContentRail
-              title="Trending"
-              eyebrow="Most Watched This Week"
-              icon={<Flame className="w-3 h-3 text-rose-500" />}
-              items={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 8)}
-              countryCode={countryCode}
-              onSeeAll={() => setActiveTab('popular')}
-            />
+              {/* 3. TRENDING */}
+              <GeoContentRail
+                title="Trending"
+                eyebrow="Most Watched This Week"
+                icon={<Flame className="w-3 h-3 text-rose-500" />}
+                items={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 8)}
+                countryCode={countryCode}
+                onSeeAll={() => setActiveTab('popular')}
+              />
 
-            {/* 4. POPULAR */}
-            <GeoContentRail
-              title="Popular"
-              eyebrow="Critically Acclaimed Regional Hits"
-              icon={<TrendingUp className="w-3 h-3 text-emerald-400" />}
-              items={popularTopRated.length > 0 ? popularTopRated : movies.slice(0, 8)}
-              countryCode={countryCode}
-              onSeeAll={() => setActiveTab('popular')}
-            />
+              {/* 4. POPULAR */}
+              <GeoContentRail
+                title="Popular"
+                eyebrow="Critically Acclaimed Regional Hits"
+                icon={<TrendingUp className="w-3 h-3 text-emerald-400" />}
+                items={popularTopRated.length > 0 ? popularTopRated : movies.slice(0, 8)}
+                countryCode={countryCode}
+                onSeeAll={() => setActiveTab('popular')}
+              />
 
-            {/* 5. BINGE-WORTHY SERIES */}
-            <GeoContentRail
-              title="Binge-worthy series"
-              eyebrow="Continuous Multi-Part Storytelling"
-              icon={<Tv className="w-3 h-3 text-violet-400" />}
-              items={bingeWorthySeries.length > 0 ? bingeWorthySeries : movies.slice(0, 8)}
-              countryCode={countryCode}
-              onSeeAll={() => setActiveTab('series')}
-            />
+              {/* 5. BINGE-WORTHY SERIES */}
+              <GeoContentRail
+                title="Binge-worthy series"
+                eyebrow="Continuous Multi-Part Storytelling"
+                icon={<Tv className="w-3 h-3 text-violet-400" />}
+                items={bingeWorthySeries.length > 0 ? bingeWorthySeries : movies.slice(0, 8)}
+                countryCode={countryCode}
+                onSeeAll={() => setActiveTab('series')}
+              />
 
-            {/* 6. NEW IN THEATRES */}
-            <GeoContentRail
-              title="New in theatres"
-              eyebrow="Feature-Length Regional Cinema"
-              icon={<Theater className="w-3 h-3 text-orange-400" />}
-              items={newInTheatres.length > 0 ? newInTheatres : movies.slice(0, 8)}
-              countryCode={countryCode}
-              onSeeAll={() => setActiveTab('full_movies')}
-            />
-          </div>
+              {/* 6. NEW IN THEATRES */}
+              <GeoContentRail
+                title="New in theatres"
+                eyebrow="Feature-Length Regional Cinema"
+                icon={<Theater className="w-3 h-3 text-orange-400" />}
+                items={newInTheatres.length > 0 ? newInTheatres : movies.slice(0, 8)}
+                countryCode={countryCode}
+                onSeeAll={() => setActiveTab('full_movies')}
+              />
+            </div>
+          )
         )}
 
         {/* MODE 2: MOVIES GRID (When filtering or when tab is selected) */}
@@ -579,15 +594,7 @@ export default function CountryMovies() {
             </div>
 
             {isLoading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                {[...Array(8)].map((_, i) => (
-                  <div key={i} className="rounded-2xl border border-gray-800 bg-gray-900/40 p-3 space-y-3 animate-pulse">
-                    <div className="aspect-video w-full bg-gray-800/60 rounded-xl" />
-                    <div className="h-4 bg-gray-800 rounded w-3/4" />
-                    <div className="h-3 bg-gray-800/50 rounded w-1/2" />
-                  </div>
-                ))}
-              </div>
+              <MovieGridSkeleton count={12} />
             ) : movies.length === 0 ? (
               <div className="text-center py-16 bg-gray-900/30 rounded-3xl border border-gray-800/80 p-8 space-y-4">
                 {renderEmptyState()}
@@ -616,13 +623,7 @@ export default function CountryMovies() {
           </section>
         )}
 
-        {/* Informational Disclaimer Footer */}
-        <footer className="pt-8 border-t border-gray-800/60 text-center text-xs text-gray-500 space-y-1">
-          <p>{t.disclaimer}</p>
-          <p className="text-[11px] text-gray-600">
-            OrangeFlix discovers and indexes public entertainment from YouTube using the YouTube Data API v3 and plays content via the official YouTube embedded player.
-          </p>
-        </footer>
+       
       </main>
     </div>
   );

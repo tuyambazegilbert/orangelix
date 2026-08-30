@@ -72,7 +72,7 @@ export const GEO_TRANSLATIONS: Record<string, GeoTranslationDictionary> = {
   en: {
     watchMovies: (c) => `Watch ${c === 'Rwanda' ? 'Rwandan' : `${c}`} Movies`,
     forYou: 'For You',
-    discoverSubtitle: (c) => `Curated cinema & stories from ${c} discovered on YouTube.`,
+    discoverSubtitle: (c) => `Curated cinema & stories from ${c} `,
     fullMovies: 'Full Movies',
     popular: 'Popular Now',
     recentlyAdded: 'Recently Added',
@@ -99,7 +99,6 @@ export const GEO_TRANSLATIONS: Record<string, GeoTranslationDictionary> = {
     shortLength: 'Short (< 30m)',
     score: 'Quality Score',
     officialYouTubeEmbed: 'Official YouTube embedded playback adhering to platform syndication standards.',
-    disclaimer: 'OrangeFlix indexes public YouTube cinema metadata and streams directly via the official embedded player.',
   },
   fr: {
     watchMovies: (c) => `Regarder des Films ${c === 'Rwanda' ? 'Rwandais' : `du ${c}`}`,

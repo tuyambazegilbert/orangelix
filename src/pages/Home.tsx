@@ -15,6 +15,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { WatchHistoryItem } from '@/types';
 import { MediaItem } from '@/types/media';
 
+import { HeroSkeleton } from '@/components/ui/Skeletons';
+
 export default function Home() {
   const navigate = useNavigate();
   const trending = useTrending('all', 'week');
@@ -62,7 +64,7 @@ export default function Home() {
 
       {/* 3D Stage Slider Hero Section */}
       {trending.isLoading ? (
-        <div className="skeleton h-[420px] border-b border-white/[.07]" />
+        <HeroSkeleton />
       ) : featured.length ? (
         <StageSlider items={featured} />
       ) : (

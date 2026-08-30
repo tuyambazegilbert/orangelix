@@ -112,5 +112,25 @@ export const BooksApi = {
       return [];
     }
   },
+
+  async getBookForMovie(movieTitle: string): Promise<BookAdaptation | null> {
+    if (!movieTitle) return null;
+
+    const clean = movieTitle.toLowerCase().trim();
+    const known = FAMOUS_ADAPTATIONS.find(
+      (a) =>
+        a.adaptedMovieTitle.toLowerCase().includes(clean) ||
+        clean.includes(a.bookTitle.toLowerCase()) ||
+        a.bookTitle.toLowerCase().includes(clean)
+    );
+    if (known) return known;
+
+    try {
+      const results = await this.searchBookByTitle(movieTitle);
+      return results.length > 0 ? results[0] : null;
+    } catch {
+      return null;
+    }
+  },
 };
 

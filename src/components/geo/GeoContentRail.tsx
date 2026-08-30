@@ -18,6 +18,7 @@ interface GeoContentRailProps {
   icon?: React.ReactNode;
   href?: string;
   onSeeAll?: () => void;
+  loading?: boolean;
 }
 
 export default function GeoContentRail({
@@ -28,6 +29,7 @@ export default function GeoContentRail({
   icon,
   href,
   onSeeAll,
+  loading = false,
 }: GeoContentRailProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
@@ -56,7 +58,7 @@ export default function GeoContentRail({
   };
 
   useEffect(() => {
-    if (!items || items.length < 2 || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (loading || !items || items.length < 2 || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return;
     }
 
@@ -65,7 +67,7 @@ export default function GeoContentRail({
     }, 5200);
 
     return () => window.clearInterval(timer);
-  }, [items.length, paused]);
+  }, [items.length, loading, paused]);
 
   const pauseForInteraction = () => {
     setPaused(true);
@@ -73,9 +75,9 @@ export default function GeoContentRail({
     pauseTimer.current = window.setTimeout(() => setPaused(false), 6500);
   };
 
-  if (!items || items.length === 0) return null;
+  if (!loading && (!items || items.length === 0)) return null;
 
-  const displayItems = items.length > 1 ? [...items, ...items] : items;
+  const displayItems = items && items.length > 1 ? [...items, ...items] : items || [];
 
   return (
     <section className="group/rail py-4 sm:py-6">
@@ -90,7 +92,7 @@ export default function GeoContentRail({
           )}
           <h2 className="section-title flex items-center gap-2">
             {title}
-            <span className="text-xs font-normal text-slate-500 font-mono">({items.length})</span>
+            {!loading && <span className="text-xs font-normal text-slate-500 font-mono">({items.length})</span>}
           </h2>
         </div>
 
@@ -134,14 +136,27 @@ export default function GeoContentRail({
         onPointerDown={pauseForInteraction}
         className="scrollbar-hide -mx-4 flex snap-x snap-mandatory gap-3.5 overflow-x-auto px-4 pb-2 sm:-mx-7 sm:px-7 lg:-mx-[3.75rem] lg:px-[3.75rem]"
       >
-        {displayItems.map((movie, index) => (
-          <div
-            key={`${movie.id}-${index}`}
-            className="w-[240px] sm:w-[270px] md:w-[290px] shrink-0 snap-start"
-          >
-            <CountryMovieCard movie={movie} countryCode={countryCode} />
-          </div>
-        ))}
+        {loading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="w-[240px] sm:w-[270px] md:w-[290px] shrink-0 snap-start rounded-2xl border border-gray-800 bg-gray-900/40 p-3 space-y-3 animate-pulse"
+            >
+              <div className="aspect-video w-full bg-gray-800/60 rounded-xl" />
+              <div className="h-4 bg-gray-800 rounded w-3/4" />
+              <div className="h-3 bg-gray-800/50 rounded w-1/2" />
+            </div>
+          ))
+        ) : (
+          displayItems.map((movie, index) => (
+            <div
+              key={`${movie.id}-${index}`}
+              className="w-[240px] sm:w-[270px] md:w-[290px] shrink-0 snap-start"
+            >
+              <CountryMovieCard movie={movie} countryCode={countryCode} />
+            </div>
+          ))
+        )}
       </div>
     </section>
   );

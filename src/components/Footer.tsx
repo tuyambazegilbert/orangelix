@@ -32,9 +32,9 @@ export default function Footer() {
       <div className="pointer-events-none absolute -top-32 right-[12%] h-64 w-64 rounded-full bg-orange-500/[.07] blur-3xl" />
       <div className="pointer-events-none absolute -bottom-24 left-[10%] h-56 w-56 rounded-full bg-violet-600/[.08] blur-3xl" />
 
-      <div className="relative mx-auto grid max-w-[1600px] gap-8 px-5 sm:grid-cols-2 lg:grid-cols-5 lg:px-[clamp(2rem,5vw,6rem)]">
+      <div className="relative mx-auto grid max-w-[1600px] gap-8 px-5 sm:grid-cols-2 lg:grid-cols-6 lg:px-[clamp(2rem,5vw,6rem)]">
         {/* Col 1: Brand */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-2">
           <Link to="/" className="flex items-center gap-2.5">
             <img
               src="/android-chrome-192x192.png"
@@ -45,12 +45,21 @@ export default function Footer() {
               Orange<span className="text-orange-400">Flix</span>
             </span>
           </Link>
-          <p className="mt-3 max-w-xs text-xs leading-5 text-slate-400">
-            Films, series, official soundtracks, and your next great night in—made easy to discover.
+          <p className="mt-3 max-w-sm text-xs leading-5 text-slate-400">
+            African & global cinema discovery, full movie & series streaming, soundtrack albums, and AI-powered recommendations.
           </p>
-          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-            <Film className="h-4 w-4 text-orange-400" />
-            Built for curious viewers
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Link
+              to="/story-behind"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/25 text-orange-400 text-xs font-semibold hover:bg-orange-500/20 transition"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>The Story Behind</span>
+            </Link>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <Film className="h-4 w-4 text-orange-400" />
+              Built for cinema lovers
+            </div>
           </div>
         </div>
 
@@ -62,6 +71,7 @@ export default function Footer() {
             <FooterLink to="/series">TV Shows</FooterLink>
             <FooterLink to="/trending">Trending Now</FooterLink>
             <FooterLink to="/new">New Releases</FooterLink>
+            <FooterLink to="/genres">Genre Guide</FooterLink>
           </nav>
         </div>
 
@@ -76,14 +86,15 @@ export default function Footer() {
           </nav>
         </div>
 
-        {/* Col 4: Your Library */}
+        {/* Col 4: Trust & Legal */}
         <div>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-white">Your Library</h2>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-white">Trust & Legal</h2>
           <nav className="mt-3 grid gap-2">
-            <FooterLink to="/favorites">Watchlist</FooterLink>
-            <FooterLink to="/watchlater">Watch Later</FooterLink>
-            <FooterLink to="/profile">Personal Dashboard</FooterLink>
-            <FooterLink to="/login">Sign In / Register</FooterLink>
+            <FooterLink to="/story-behind">Story Behind & Founder</FooterLink>
+            <FooterLink to="/security">Security & Architecture</FooterLink>
+            <FooterLink to="/privacy">Privacy Policy</FooterLink>
+            <FooterLink to="/terms">Terms & Conditions</FooterLink>
+            <FooterLink to="/disclaimer">Disclaimer & DMCA</FooterLink>
           </nav>
         </div>
 
@@ -122,28 +133,46 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="relative mx-auto mt-8 flex max-w-[1600px] flex-col gap-3 border-t border-white/[.07] px-5 pt-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-[clamp(2rem,5vw,6rem)]">
+      <div className="relative mx-auto mt-8 flex max-w-[1600px] flex-col gap-4 border-t border-white/[.07] px-5 pt-4 text-xs text-slate-500 lg:flex-row lg:items-center lg:justify-between lg:px-[clamp(2rem,5vw,6rem)]">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span>© {new Date().getFullYear()} OrangeFlix</span>
           <span className="hidden h-3 w-px bg-white/10 sm:block" />
           <span className="inline-flex items-center gap-1.5">
             Crafted with <Heart className="h-3 w-3 fill-orange-400 text-orange-400" /> for film lovers
           </span>
+          <span className="hidden h-3 w-px bg-white/10 sm:block" />
+          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+            <Link to="/security" className="hover:text-orange-400 transition">Security</Link>
+            <span>•</span>
+            <Link to="/privacy" className="hover:text-orange-400 transition">Privacy</Link>
+            <span>•</span>
+            <Link to="/terms" className="hover:text-orange-400 transition">Terms</Link>
+            <span>•</span>
+            <Link to="/disclaimer" className="hover:text-orange-400 transition">Disclaimer</Link>
+            <span>•</span>
+            <Link to="/story-behind" className="hover:text-orange-400 transition">Founder Story</Link>
+          </div>
         </div>
+
         <div className="flex flex-wrap items-center gap-4">
-          <a
-            href="https://tuyambaze-gilbert.vercel.app/"
-            target="_blank"
-            rel="noreferrer"
+          <Link
+            to="/story-behind"
             className="inline-flex items-center gap-1.5 font-medium text-slate-300 transition hover:text-orange-300"
           >
             <Sparkles className="h-3.5 w-3.5 text-orange-400" />
             Honored creation by Gilbert Tuyambaze
-            <ExternalLink className="h-3 w-3" />
+          </Link>
+          <a
+            href="https://tuyambaze-gilbert.vercel.app/"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-orange-400/90 hover:text-orange-300 font-semibold"
+          >
+            Portfolio <ExternalLink className="h-3 w-3" />
           </a>
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="inline-flex items-center gap-1.5 hover:text-orange-300"
+            className="inline-flex items-center gap-1.5 hover:text-orange-300 ml-auto lg:ml-0"
           >
             Back to top <ArrowUp className="h-3 w-3" />
           </button>
