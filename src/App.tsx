@@ -50,6 +50,7 @@ import Security from './pages/Security';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsConditions from './pages/TermsConditions';
 import Disclaimer from './pages/Disclaimer';
+import Support from './pages/Support';
 
 // Geo-Located Cinema & YouTube Discovery
 import CountryMovies from './pages/CountryMovies';
@@ -126,6 +127,7 @@ const App = () => {
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                   <Route path="/terms" element={<TermsConditions />} />
                   <Route path="/disclaimer" element={<Disclaimer />} />
+                  <Route path="/support" element={<Support />} />
 
                   {/* Geo-Located YouTube Movie & Series Catalogs */}
                   <Route path="/:countryCode/movies" element={<CountryMovies />} />

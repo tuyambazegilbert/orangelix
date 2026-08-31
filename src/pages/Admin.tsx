@@ -50,6 +50,7 @@ import { RecommendationScore } from '@/features/recommendations/engine/types';
 import { computeRecommendationScore } from '@/features/recommendations/engine/scoring';
 import YouTubeGeoAdminTab from '@/components/admin/YouTubeGeoAdminTab';
 import EmailCampaignStudio from '@/components/admin/EmailCampaignStudio';
+import SupportInbox from '@/components/admin/SupportInbox';
 import { Youtube } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -581,6 +582,13 @@ export default function Admin() {
             >
               <Youtube className="w-3.5 h-3.5 mr-1 text-red-400" />
               YouTube Geo
+            </TabsTrigger>
+            <TabsTrigger
+              value="support"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
+            >
+              <MessageSquare className="w-3.5 h-3.5 mr-1" />
+              Support
             </TabsTrigger>
           </TabsList>
 
@@ -1656,6 +1664,14 @@ export default function Admin() {
               users={users}
               actorEmail={currentUser?.email}
               onSent={() => void loadDashboardData()}
+            />
+          </TabsContent>
+
+          <TabsContent value="support" className="space-y-6 animate-fade-in">
+            <SupportInbox
+              adminId={currentUser?.id || ''}
+              adminName={currentUser?.name || 'OrangeFlix Support'}
+              adminEmail={currentUser?.email || ''}
             />
           </TabsContent>
 

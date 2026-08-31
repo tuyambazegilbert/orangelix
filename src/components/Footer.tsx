@@ -95,6 +95,7 @@ export default function Footer() {
             <FooterLink to="/privacy">Privacy Policy</FooterLink>
             <FooterLink to="/terms">Terms & Conditions</FooterLink>
             <FooterLink to="/disclaimer">Disclaimer & DMCA</FooterLink>
+            <FooterLink to="/support">Feedback & Bug Reports</FooterLink>
           </nav>
         </div>
 
@@ -151,6 +152,8 @@ export default function Footer() {
             <Link to="/disclaimer" className="hover:text-orange-400 transition">Disclaimer</Link>
             <span>•</span>
             <Link to="/story-behind" className="hover:text-orange-400 transition">Founder Story</Link>
+            <span>•</span>
+            <Link to="/support" className="hover:text-orange-400 transition">Support</Link>
           </div>
         </div>
 
