@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import GoogleOneTap from '@/components/GoogleOneTap';
 import { toast } from 'sonner';
-import { Lock, Link2, RefreshCw, AlertCircle } from 'lucide-react';
+import { Lock, Link2, RefreshCw, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { User } from '@/types';
 
 function getAuthErrorMessage(code?: string): string {
@@ -48,7 +48,9 @@ function getAuthErrorMessage(code?: string): string {
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [linkPassword, setLinkPassword] = useState('');
+  const [showLinkPassword, setShowLinkPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLinkingLoading, setIsLinkingLoading] = useState(false);
 
@@ -202,16 +204,33 @@ export default function Login() {
                   Forgot password?
                 </Link>
               </div>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="bg-gray-950/80 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500"
-                placeholder="••••••••"
-                autoComplete="current-password"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="bg-gray-950/80 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500 pr-10"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors p-1"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4 text-orange-400" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <Button
@@ -306,15 +325,28 @@ export default function Login() {
               <div className="relative">
                 <Input
                   id="linkPassword"
-                  type="password"
+                  name="linkPassword"
+                  type={showLinkPassword ? 'text' : 'password'}
                   value={linkPassword}
                   onChange={(e) => setLinkPassword(e.target.value)}
                   required
-                  className="bg-gray-950 border-gray-700 text-white pl-9"
+                  className="bg-gray-950 border-gray-700 text-white pl-9 pr-10"
                   placeholder="Enter your existing password"
-                  autoFocus
                 />
                 <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <button
+                  type="button"
+                  onClick={() => setShowLinkPassword(!showLinkPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors p-1"
+                  aria-label={showLinkPassword ? 'Hide password' : 'Show password'}
+                  tabIndex={-1}
+                >
+                  {showLinkPassword ? (
+                    <EyeOff className="w-4 h-4 text-orange-400" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
               </div>
             </div>
 

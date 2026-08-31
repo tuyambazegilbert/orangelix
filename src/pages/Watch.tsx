@@ -183,6 +183,17 @@ export default function Watch() {
   const persistProgress = (seconds: number, total: number) => {
     localStorage.setItem(progressKey(rawId), String(Math.floor(seconds)));
     if (currentUser) void FirebaseData.setHistory(currentUser.id, media, seconds, total);
+    Analytics.logEvent('watch_progress', {
+      userId: currentUser?.id,
+      entityType: media.mediaType,
+      entityId: rawId,
+      entityTitle: media.title,
+      metadata: {
+        seconds: Math.floor(seconds),
+        durationSeconds: Math.floor(total),
+        completionPercent: total > 0 ? Number(((seconds / total) * 100).toFixed(1)) : 0,
+      },
+    });
 
     // Check completion threshold (>= 80%)
     if (total > 0 && seconds / total >= 0.8 && !hasCompleted) {

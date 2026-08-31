@@ -203,9 +203,9 @@ export const Analytics = {
       if (t >= monthCutoff) mauSessions.add(identity);
     });
 
-    const dau = Math.max(dauSessions.size, 1);
-    const wau = Math.max(wauSessions.size, dau);
-    const mau = Math.max(mauSessions.size, wau);
+    const dau = dauSessions.size;
+    const wau = wauSessions.size;
+    const mau = mauSessions.size;
 
     // 2. Real Discovery Funnel
     const hubViews = events.filter((e) => e.type === 'page_view').length;
@@ -213,7 +213,7 @@ export const Analytics = {
     const watchStarts = events.filter((e) => e.type === 'watch_start').length;
     const completions = events.filter((e) => e.type === 'watch_complete').length;
 
-    const baseCount = Math.max(hubViews, detailViews, 1);
+    const baseCount = Math.max(hubViews, detailViews);
     const detailConv = baseCount > 0 ? (detailViews / baseCount) * 100 : 0;
     const watchStartConv = detailViews > 0 ? (watchStarts / detailViews) * 100 : 0;
     const completionConv = watchStarts > 0 ? (completions / watchStarts) * 100 : 0;
@@ -222,7 +222,7 @@ export const Analytics = {
       {
         name: '1. Discovery & Hub Views',
         count: hubViews,
-        conversionRate: 100,
+        conversionRate: hubViews > 0 ? 100 : 0,
         dropoffRate: 0,
       },
       {

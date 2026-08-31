@@ -40,6 +40,7 @@ import {
   Download,
   Lock,
   Compass,
+  Mail,
 } from 'lucide-react';
 import { POSTER_FALLBACK } from '@/lib/tmdb/images';
 import { tmdbClient } from '@/lib/tmdb/client';
@@ -48,6 +49,7 @@ import { Analytics, AnalyticsReport } from '@/services/analytics';
 import { RecommendationScore } from '@/features/recommendations/engine/types';
 import { computeRecommendationScore } from '@/features/recommendations/engine/scoring';
 import YouTubeGeoAdminTab from '@/components/admin/YouTubeGeoAdminTab';
+import EmailCampaignStudio from '@/components/admin/EmailCampaignStudio';
 import { Youtube } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -506,10 +508,10 @@ export default function Admin() {
       </div>
 
       {/* Main Content Area */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
           {/* Navigation Tabs */}
-          <TabsList className="bg-gray-900/90 border border-gray-800 p-1.5 rounded-2xl grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
+          <TabsList className="h-auto w-full bg-gray-900/90 border border-gray-800 p-1.5 rounded-2xl grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             <TabsTrigger
               value="overview"
               className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
@@ -553,6 +555,13 @@ export default function Admin() {
               Analytics
             </TabsTrigger>
             <TabsTrigger
+              value="emails"
+              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
+            >
+              <Mail className="w-3.5 h-3.5 mr-1 text-orange-400" />
+              Email Studio
+            </TabsTrigger>
+            <TabsTrigger
               value="seo"
               className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
             >
@@ -567,13 +576,6 @@ export default function Admin() {
               Reviews ({reviews.length})
             </TabsTrigger>
             <TabsTrigger
-              value="system"
-              className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
-            >
-              <Database className="w-3.5 h-3.5 mr-1" />
-              Cloud Setup
-            </TabsTrigger>
-            <TabsTrigger
               value="youtube-geo"
               className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs font-semibold py-2"
             >
@@ -585,14 +587,14 @@ export default function Admin() {
           {/* TAB 1: OVERVIEW */}
           <TabsContent value="overview" className="space-y-8 animate-fade-in">
             {/* Metric Stat Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Card className="bg-gray-900/60 border-orange-500/20 backdrop-blur-xl shadow-xl hover:border-orange-500/40 transition-all">
-                <CardContent className="p-6 flex items-center justify-between">
+                <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
                       Global Users
                     </p>
-                    <h3 className="text-3xl font-extrabold text-white">{stats.totalUsers}</h3>
+                    <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalUsers}</h3>
                     <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
                       <Sparkles className="w-3 h-3" /> Registered accounts
                     </p>
@@ -604,12 +606,12 @@ export default function Admin() {
               </Card>
 
               <Card className="bg-gray-900/60 border-yellow-500/20 backdrop-blur-xl shadow-xl hover:border-yellow-500/40 transition-all">
-                <CardContent className="p-6 flex items-center justify-between">
+                <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
                       Custom Titles
                     </p>
-                    <h3 className="text-3xl font-extrabold text-white">{stats.totalMovies}</h3>
+                    <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalMovies}</h3>
                     <p className="text-xs text-yellow-400 mt-1 flex items-center gap-1">
                       <Film className="w-3 h-3" /> Direct stream titles
                     </p>
@@ -621,12 +623,12 @@ export default function Admin() {
               </Card>
 
               <Card className="bg-gray-900/60 border-emerald-500/20 backdrop-blur-xl shadow-xl hover:border-emerald-500/40 transition-all">
-                <CardContent className="p-6 flex items-center justify-between">
+                <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
                       Audience Reviews
                     </p>
-                    <h3 className="text-3xl font-extrabold text-white">{stats.totalReviews}</h3>
+                    <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalReviews}</h3>
                     <p className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
                       <Star className="w-3 h-3" /> Community ratings
                     </p>
@@ -638,7 +640,7 @@ export default function Admin() {
               </Card>
 
               <Card className="bg-gray-900/60 border-blue-500/20 backdrop-blur-xl shadow-xl hover:border-blue-500/40 transition-all">
-                <CardContent className="p-6 flex items-center justify-between">
+                <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
                       Database Sync
@@ -1649,6 +1651,14 @@ export default function Admin() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="emails" className="animate-fade-in">
+            <EmailCampaignStudio
+              users={users}
+              actorEmail={currentUser?.email}
+              onSent={() => void loadDashboardData()}
+            />
+          </TabsContent>
+
           {/* TAB 6: SEO COMMAND CENTER */}
           <TabsContent value="seo" className="space-y-8 animate-fade-in">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1723,93 +1733,6 @@ export default function Admin() {
                 ))}
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* TAB 7: SYSTEM & CLOUD SETUP */}
-          <TabsContent value="system" className="space-y-8 animate-fade-in">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Connection Status Card */}
-              <Card className="bg-gray-900/70 border-gray-800 backdrop-blur-xl">
-                <CardHeader>
-                  <CardTitle className="text-white text-lg">Firebase Cloud Status</CardTitle>
-                  <CardDescription className="text-gray-400 text-xs">
-                    Current connection to Cloud Firestore & Auth
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-gray-950 border border-gray-800">
-                    <span className="text-sm text-gray-300">Firestore Cloud</span>
-                    <Badge
-                      className={
-                        firebaseEnabled
-                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                      }
-                    >
-                      {firebaseEnabled ? 'Active' : 'Unconfigured'}
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-gray-950 border border-gray-800">
-                    <span className="text-sm text-gray-300">TMDB API Gateway</span>
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                      Connected
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-gray-950 border border-gray-800">
-                    <span className="text-sm text-gray-300">Authentication Service</span>
-                    <Badge
-                      className={
-                        firebaseEnabled
-                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                          : 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                      }
-                    >
-                      {firebaseEnabled ? 'Firebase Auth' : 'Local Auth'}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Guide Card */}
-              <Card className="lg:col-span-2 bg-gradient-to-r from-orange-950/20 via-gray-900 to-yellow-950/20 border-orange-500/30 backdrop-blur-xl">
-                <CardHeader>
-                  <CardTitle className="text-white text-lg flex items-center gap-2">
-                    <BookOpen className="w-5 h-5 text-orange-400" />
-                    Complete Firebase Setup Documentation
-                  </CardTitle>
-                  <CardDescription className="text-gray-300 text-xs">
-                    Follow the full guide in <code>FIREBASE_SETUP_GUIDE.md</code> to link your live Firestore project
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-sm text-gray-300 leading-relaxed">
-                    To make all OrangeFlix data permanently stored globally across devices:
-                  </p>
-
-                  <ol className="list-decimal list-inside space-y-2 text-xs text-gray-300 pl-2">
-                    <li>Create a project in the <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-orange-400 hover:underline">Firebase Console</a>.</li>
-                    <li>Enable <strong>Authentication</strong> (Email/Password + Google Provider).</li>
-                    <li>Create a <strong>Cloud Firestore Database</strong>.</li>
-                    <li>Copy the configuration keys to your <code>.env</code> file.</li>
-                    <li>Deploy the provided security rules from <code>firestore.rules</code>.</li>
-                  </ol>
-
-                  <div className="p-4 rounded-xl bg-gray-950/80 border border-gray-800 text-xs space-y-2">
-                    <p className="text-orange-400 font-semibold">Environment Keys Checklist:</p>
-                    <code className="block text-gray-400 font-mono text-[11px] space-y-1">
-                      VITE_FIREBASE_API_KEY=...<br />
-                      VITE_FIREBASE_AUTH_DOMAIN=...<br />
-                      VITE_FIREBASE_PROJECT_ID=...<br />
-                      VITE_FIREBASE_STORAGE_BUCKET=...<br />
-                      VITE_FIREBASE_MESSAGING_SENDER_ID=...<br />
-                      VITE_FIREBASE_APP_ID=...
-                    </code>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
 
           {/* TAB 10: YOUTUBE GEO DISCOVERY */}

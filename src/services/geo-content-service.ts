@@ -1185,6 +1185,49 @@ export const GeoContentService = {
     }
   },
 
+  /** Apply a moderation change to selected catalog items. Runs each write independently so one bad document cannot abort the operation. */
+  async bulkUpdateContentStatus(
+    ids: string[],
+    status: GeoContentStatus,
+    isFullMovieCandidate?: boolean,
+    classification?: GeoContentItem['classification']
+  ): Promise<void> {
+    await Promise.all(ids.map((id) => this.updateContentStatus(id, status, isFullMovieCandidate, classification)));
+    this.invalidateCache();
+  },
+
+  async bulkDeleteContent(ids: string[]): Promise<void> {
+    hydrateLocalCache();
+    await Promise.all(ids.map(async (id) => {
+      memoryCache.delete(id);
+      if (firestore) {
+        try { await deleteDoc(doc(firestore, 'geoContent', id)); } catch { /* local removal remains valid */ }
+      }
+    }));
+    persistLocalCache();
+    this.invalidateCache();
+  },
+
+  async bulkRejectChannels(channelIds: string[]): Promise<void> {
+    await Promise.all(channelIds.map((id) => this.rejectChannel(id)));
+  },
+
+  async bulkPauseChannels(channelIds: string[]): Promise<void> {
+    await Promise.all(channelIds.map((id) => this.pauseChannel(id)));
+  },
+
+  async bulkToggleChannelAutoPublish(channelIds: string[], enabled: boolean): Promise<void> {
+    await Promise.all(channelIds.map((id) => this.toggleChannelAutoPublish(id, enabled)));
+  },
+
+  async bulkToggleCustomQueries(ids: string[], enabled: boolean): Promise<void> {
+    await Promise.all(ids.map((id) => this.toggleCustomQuery(id, enabled)));
+  },
+
+  async bulkDeleteCustomQueries(ids: string[]): Promise<void> {
+    await Promise.all(ids.map((id) => this.deleteCustomQuery(id)));
+  },
+
   /** Get discovery log summary for a country */
   getDiscoverySummary(countryCode: string = 'RW'): DiscoverySummaryLog | null {
     hydrateLocalCache();

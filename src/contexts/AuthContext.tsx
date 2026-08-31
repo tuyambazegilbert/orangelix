@@ -6,7 +6,7 @@ import {
   GoogleAuthProvider,
   linkWithCredential,
   onAuthStateChanged,
-  sendPasswordResetEmail,
+  sendEmailVerification,
   signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -17,13 +17,28 @@ import { AuthContextType, User } from '@/types';
 import { AuthService } from '@/lib/auth';
 import { firebaseAuth, firebaseEnabled } from '@/lib/firebase';
 import { FirebaseData } from '@/lib/firebase-data';
+import { EmailService } from '@/services/email-service';
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const defaultAuthContext: AuthContextType = {
+  currentUser: null,
+  isLoading: false,
+  login: async () => null,
+  loginWithGoogle: async () => null,
+  register: async () => null,
+  logout: () => {},
+  resetPassword: async () => false,
+  confirmPasswordReset: async () => false,
+  isLinkingAccount: false,
+  pendingLinkEmail: null,
+  linkAccountWithPassword: async () => null,
+  cancelAccountLinking: () => {},
+};
 
-export function useAuth() {
+const AuthContext = createContext<AuthContextType>(defaultAuthContext);
+
+export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
-  return context;
+  return context || defaultAuthContext;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -123,6 +138,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const credential = await signInWithPopup(firebaseAuth, provider);
       const user = await FirebaseData.ensureUserProfile(credential.user);
+      if (user.isNewUser && user.email) {
+        void EmailService.sendWelcomeEmail({ email: user.email, name: user.name });
+      }
       setCurrentUser(user);
       return user;
     } catch (err: unknown) {
@@ -157,6 +175,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const credential = GoogleAuthProvider.credential(idToken);
       const userCredential = await signInWithCredential(firebaseAuth, credential);
       const user = await FirebaseData.ensureUserProfile(userCredential.user);
+      if (user.isNewUser && user.email) {
+        void EmailService.sendWelcomeEmail({ email: user.email, name: user.name });
+      }
       setCurrentUser(user);
       return user;
     } catch (err: unknown) {
@@ -224,8 +245,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseEnabled && firebaseAuth) {
         const credential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
         await updateProfile(credential.user, { displayName: name });
+        await sendEmailVerification(credential.user, {
+          url: `${window.location.origin}/profile`,
+          handleCodeInApp: false,
+        });
         const user = await FirebaseData.ensureUserProfile(credential.user, { name });
         setCurrentUser(user);
+
+        // Dispatch Welcome / Account Creation Congratulations Email
+        void EmailService.sendWelcomeEmail({ email, name });
+
         return user;
       }
 
@@ -234,6 +263,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (ok) {
         const localUser = AuthService.getCurrentUser();
         setCurrentUser(localUser);
+
+        // Dispatch Welcome Email for local user
+        void EmailService.sendWelcomeEmail({ email, name });
+
         return localUser;
       }
       return null;
@@ -254,12 +287,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string): Promise<boolean> => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://orangeflixx.vercel.app';
+    const customResetUrl = `${origin}/reset-password`;
+
     try {
       if (firebaseEnabled && firebaseAuth) {
-        await sendPasswordResetEmail(firebaseAuth, email);
-        return true;
+        const response = await fetch('/api/generate-password-reset-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, continueUrl: customResetUrl }),
+        });
+        if (!response.ok) {
+          throw new Error('Unable to create a secure password reset link.');
+        }
+        const { resetUrl, recipientName } = (await response.json()) as {
+          resetUrl?: string;
+          recipientName?: string;
+        };
+        if (!resetUrl) throw new Error('Firebase did not return a password reset link.');
+
+        const sent = await EmailService.sendPasswordResetEmail({
+          email,
+          name: recipientName,
+          resetUrl,
+        });
+
+        return sent;
       }
-      return await AuthService.resetPassword(email);
+
+      const localReset = await AuthService.resetPassword(email);
+      if (localReset) {
+        void EmailService.sendPasswordResetEmail({
+          email,
+          resetUrl: customResetUrl,
+        });
+      }
+      return localReset;
     } catch (err: unknown) {
       const error = err as { code?: string; message?: string };
       console.error('[Auth Reset Password Error]', error.code, error.message);

@@ -63,6 +63,40 @@ function youtubeBackendPlugin(): Plugin {
   };
 }
 
+function passwordResetBackendPlugin(): Plugin {
+  return {
+    name: "password-reset-backend-api",
+    configureServer(server) {
+      server.middlewares.use("/api/generate-password-reset-link", async (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: "Method not allowed" }));
+          return;
+        }
+
+        let body = "";
+        req.on("data", (chunk: Buffer) => {
+          body += chunk.toString();
+        });
+        req.on("end", async () => {
+          try {
+            const { generatePasswordResetLink } = await server.ssrLoadModule("./src/server/password-reset.ts");
+            const { email, continueUrl } = JSON.parse(body || "{}");
+            const result = await generatePasswordResetLink(email, continueUrl);
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(result));
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: err instanceof Error ? err.message : "Password reset link generation failed" }));
+          }
+        });
+      });
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
   plugins: [
@@ -71,6 +105,7 @@ export default defineConfig(() => ({
     }),
     react(),
     youtubeBackendPlugin(),
+    passwordResetBackendPlugin(),
   ],
   resolve: {
     alias: {

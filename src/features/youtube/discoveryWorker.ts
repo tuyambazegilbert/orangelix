@@ -94,6 +94,10 @@ export const YouTubeDiscoveryWorker = {
       if (res.error) {
         lastApiError = res.error;
         stats.errors.push({ stage: `Search: "${query}"`, message: res.error });
+        if (res.error.includes('429') || res.error.includes('rateLimitExceeded')) {
+          console.warn('[YouTube] Search quota exhausted. Stopping this country scan.');
+          break;
+        }
       }
 
       stats.youtubeResults += res.videoIds.length;

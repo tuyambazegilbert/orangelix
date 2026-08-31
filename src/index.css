@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Dense admin workflow: deliberately compact on touch devices without hiding controls. */
+.email-campaign-compact .min-h-\[260px\] { min-height: 0; }
+.email-campaign-compact [class~="p-6"] { padding: 0.875rem; }
+.email-campaign-compact [class~="p-5"] { padding: 0.75rem; }
+.email-campaign-compact [class~="p-4"] { padding: 0.625rem; }
+.email-campaign-compact [class~="space-y-5"] > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+.email-campaign-compact [class~="space-y-4"] > :not([hidden]) ~ :not([hidden]) { margin-top: 0.625rem; }
+.email-campaign-compact [class~="gap-6"] { gap: 0.75rem; }
+.email-campaign-compact .min-h-28 { min-height: 4.5rem; }
+.email-campaign-compact .max-h-52 { max-height: 10rem; }
+@media (max-width: 640px) {
+  .email-campaign-compact .grid-cols-4 button { min-width: 0; font-size: 9px; }
+  .email-campaign-compact .rounded-3xl { border-radius: 1rem; }
+}
+
 @layer base {
   :root { --background: 222 47% 5%; --foreground: 210 40% 98%; --card: 222 38% 8%; --card-foreground: 210 40% 98%; --popover: 222 38% 9%; --popover-foreground: 210 40% 98%; --primary: 24 95% 53%; --primary-foreground: 0 0% 100%; --secondary: 222 27% 15%; --secondary-foreground: 210 40% 98%; --muted: 222 22% 15%; --muted-foreground: 215 16% 66%; --accent: 222 27% 17%; --accent-foreground: 210 40% 98%; --destructive: 0 63% 45%; --destructive-foreground: 210 40% 98%; --border: 220 22% 18%; --input: 220 22% 18%; --ring: 24 95% 53%; --radius: .75rem; }
   * { @apply border-border; }

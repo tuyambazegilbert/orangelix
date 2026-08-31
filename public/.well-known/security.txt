@@ -1,7 +1,6 @@
-Contact: mailto:tuyambazegilbert05@gmail.com
+Contact: mailto:orangeflix.service@gmail.com
 Expires: 2027-12-31T23:59:59.000Z
 Preferred-Languages: en, rw, fr
 Canonical: https://orangeflixx.vercel.app/.well-known/security.txt
 Policy: https://orangeflixx.vercel.app/security
 Acknowledgments: https://orangeflixx.vercel.app/security
-

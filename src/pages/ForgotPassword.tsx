@@ -127,13 +127,15 @@ export default function ForgotPassword() {
                 </Label>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="bg-gray-950/80 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500"
                   placeholder="alex@example.com"
-                  autoFocus
+                  autoComplete="email"
+                  spellCheck={false}
                 />
               </div>
 

@@ -99,7 +99,7 @@ export default function PrivacyPolicy() {
               For any questions regarding this Privacy Policy or your data rights, please contact our founder and privacy officer:
             </p>
             <p className="text-xs text-orange-400 font-semibold flex items-center gap-1.5 pt-1">
-              <Mail className="w-4 h-4" /> tuyambazegilbert05@gmail.com
+              <Mail className="w-4 h-4" /> orangeflix.service@gmail.com
             </p>
           </section>
         </div>

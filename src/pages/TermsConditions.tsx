@@ -90,7 +90,7 @@ export default function TermsConditions() {
               If you have any questions or legal inquiries concerning these Terms & Conditions, please contact us at:
             </p>
             <p className="text-xs text-orange-400 font-semibold flex items-center gap-1.5 pt-1">
-              <Mail className="w-4 h-4" /> tuyambazegilbert05@gmail.com
+              <Mail className="w-4 h-4" /> orangeflix.service@gmail.com
             </p>
           </section>
         </div>

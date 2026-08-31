@@ -1,12 +1,13 @@
 import { FormEvent, useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Lock, CheckCircle2, RefreshCw, KeyRound, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Lock, CheckCircle2, RefreshCw, KeyRound, AlertTriangle, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { EmailService } from '@/services/email-service';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -17,7 +18,9 @@ export default function ResetPassword() {
   const mode = searchParams.get('mode') || '';
 
   const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
@@ -27,6 +30,12 @@ export default function ResetPassword() {
       toast.error('Invalid or expired password reset link.');
     }
   }, [oobCode, mode]);
+
+  // Password strength helper
+  const hasLength = newPassword.length >= 6;
+  const hasNumber = /\d/.test(newPassword);
+  const hasSpecial = /[^A-Za-z0-9]/.test(newPassword);
+  const strengthScore = (hasLength ? 1 : 0) + (hasNumber ? 1 : 0) + (hasSpecial ? 1 : 0);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -47,12 +56,23 @@ export default function ResetPassword() {
 
     setIsSubmitting(true);
     try {
-      const ok = await confirmPasswordReset(oobCode || 'dev-code', newPassword);
+      if (!oobCode) {
+        toast.error('Invalid or expired password reset link.');
+        return;
+      }
+
+      const ok = await confirmPasswordReset(oobCode, newPassword);
       if (ok) {
         setIsSuccess(true);
         toast.success('Password updated successfully!', {
           description: 'You can now sign in with your new password.',
         });
+
+        // Dispatch security notification
+        const emailParam = searchParams.get('email') || '';
+        if (emailParam) {
+          void EmailService.sendPasswordChangedAlert({ email: emailParam });
+        }
       } else {
         toast.error('Failed to reset password', {
           description: 'The reset link may be expired or already used. Please request a new one.',
@@ -115,7 +135,7 @@ export default function ResetPassword() {
               {!oobCode && (
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>No reset token provided. If testing locally, you can still test updating your password.</span>
+                  <span>Enter and confirm your new password below to update your OrangeFlix account.</span>
                 </div>
               )}
 
@@ -126,16 +146,54 @@ export default function ResetPassword() {
                 <div className="relative">
                   <Input
                     id="newPassword"
-                    type="password"
+                    name="newPassword"
+                    type={showNewPassword ? 'text' : 'password'}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
-                    className="bg-gray-950/80 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500 pl-9"
+                    className="bg-gray-950/80 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500 pl-9 pr-10"
                     placeholder="At least 6 characters"
-                    autoFocus
+                    autoComplete="new-password"
+                    spellCheck={false}
                   />
                   <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors p-1"
+                    aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                    tabIndex={-1}
+                  >
+                    {showNewPassword ? (
+                      <EyeOff className="w-4 h-4 text-orange-400" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-gray-400" />
+                    )}
+                  </button>
                 </div>
+
+                {/* Password Strength Indicator */}
+                {newPassword && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center gap-1.5 h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          strengthScore === 1
+                            ? 'w-1/3 bg-rose-500'
+                            : strengthScore === 2
+                            ? 'w-2/3 bg-amber-500'
+                            : 'w-full bg-emerald-500'
+                        }`}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-gray-400">
+                      <span>Strength: {strengthScore === 1 ? 'Weak' : strengthScore === 2 ? 'Medium' : 'Strong'}</span>
+                      <span className="flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-emerald-400" /> 6+ chars
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -145,14 +203,30 @@ export default function ResetPassword() {
                 <div className="relative">
                   <Input
                     id="confirmPassword"
-                    type="password"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
-                    className="bg-gray-950/80 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500 pl-9"
+                    className="bg-gray-950/80 border-gray-700 text-white placeholder:text-gray-500 focus:border-orange-500 pl-9 pr-10"
                     placeholder="Re-enter your new password"
+                    autoComplete="new-password"
+                    spellCheck={false}
                   />
                   <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors p-1"
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    tabIndex={-1}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="w-4 h-4 text-orange-400" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-gray-400" />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -182,12 +256,12 @@ export default function ResetPassword() {
             </div>
           )}
 
-          <div className="mt-6 text-center border-t border-gray-800/80 pt-4">
+          <div className="mt-6 text-center">
             <Link
               to="/login"
-              className="inline-flex items-center text-xs font-semibold text-gray-400 hover:text-orange-400 transition-colors"
+              className="inline-flex items-center text-xs text-gray-400 hover:text-orange-400 transition-colors"
             >
-              <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" />
               Back to Sign In
             </Link>
           </div>
@@ -196,4 +270,3 @@ export default function ResetPassword() {
     </div>
   );
 }
-

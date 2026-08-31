@@ -74,6 +74,19 @@ export interface LibraryItem {
   addedAt?: string;
 }
 
+const LOCAL_ADMIN_ACTIVITY_KEY = 'orangeflix_admin_activity_log';
+
+function getLocalAdminActivities(): AdminActivity[] {
+  try { return JSON.parse(localStorage.getItem(LOCAL_ADMIN_ACTIVITY_KEY) || '[]') as AdminActivity[]; }
+  catch { return []; }
+}
+
+function saveLocalAdminActivity(activity: AdminActivity): void {
+  try {
+    localStorage.setItem(LOCAL_ADMIN_ACTIVITY_KEY, JSON.stringify([activity, ...getLocalAdminActivities()].slice(0, 50)));
+  } catch { /* storage may be unavailable */ }
+}
+
 /** Global Cloud Database Service powered by Firebase Firestore */
 export const FirebaseData = {
   // -------------------------------------------------------------
@@ -88,7 +101,7 @@ export const FirebaseData = {
       metadata?: { creationTime?: string };
     },
     extra?: { name?: string; isAdmin?: boolean }
-  ): Promise<User> {
+  ): Promise<User & { isNewUser?: boolean }> {
     const defaultUser: User = {
       id: user.uid,
       email: user.email || '',
@@ -103,7 +116,7 @@ export const FirebaseData = {
       lastLoginAt: new Date().toISOString(),
     };
 
-    if (!firestore) return defaultUser;
+    if (!firestore) return { ...defaultUser, isNewUser: false };
 
     try {
       const userRef = doc(firestore, 'users', user.uid);
@@ -151,6 +164,7 @@ export const FirebaseData = {
           status: d.status || 'active',
           createdAt: d.createdAt || defaultUser.createdAt,
           lastLoginAt: new Date().toISOString(),
+          isNewUser: false,
         };
       }
 
@@ -168,10 +182,10 @@ export const FirebaseData = {
         updatedAt: serverTimestamp(),
       }));
 
-      return defaultUser;
+      return { ...defaultUser, isNewUser: true };
     } catch (err) {
       console.warn('Firestore ensureUserProfile error:', err);
-      return defaultUser;
+      return { ...defaultUser, isNewUser: false };
     }
   },
 
@@ -498,14 +512,21 @@ export const FirebaseData = {
   // ADMIN METRICS & ACTIVITY LOGS
   // -------------------------------------------------------------
   async logActivity(action: string, details: string, actorEmail?: string) {
+    const activity: AdminActivity = {
+      id: `act-${Date.now()}`,
+      action,
+      details,
+      actorEmail: actorEmail || 'Admin',
+      timestamp: new Date().toISOString(),
+    };
+    saveLocalAdminActivity(activity);
     if (!firestore) return;
     try {
-      const id = `act-${Date.now()}`;
-      await setDoc(doc(firestore, 'activityLogs', id), {
-        action,
-        details,
-        actorEmail: actorEmail || 'Admin',
-        timestamp: new Date().toISOString(),
+      await setDoc(doc(firestore, 'activityLogs', activity.id), {
+        action: activity.action,
+        details: activity.details,
+        actorEmail: activity.actorEmail,
+        timestamp: activity.timestamp,
         createdAt: serverTimestamp(),
       });
     } catch {
@@ -514,7 +535,7 @@ export const FirebaseData = {
   },
 
   async getRecentActivity(): Promise<AdminActivity[]> {
-    if (!firestore) return [];
+    if (!firestore) return getLocalAdminActivities();
     try {
       const col = collection(firestore, 'activityLogs');
       const q = query(col, orderBy('createdAt', 'desc'), limit(15));
@@ -527,7 +548,7 @@ export const FirebaseData = {
         timestamp: d.data().timestamp || new Date().toISOString(),
       }));
     } catch {
-      return [];
+      return getLocalAdminActivities();
     }
   },
 

@@ -47,7 +47,7 @@ export interface AutoDiscoveryStatus {
 const STORAGE_KEY_SCHEDULE_CONFIG = 'orangeflix_auto_discovery_config';
 const STORAGE_KEY_SCHEDULE_LOGS = 'orangeflix_auto_discovery_logs';
 const STORAGE_KEY_LAST_RUN = 'orangeflix_auto_discovery_last_run';
-const MIN_SCAN_INTERVAL_MS = 36 * 60 * 60 * 1000; // Minimum 36 hours between automated 3x-weekly scans
+const STORAGE_KEY_SCHEDULE_LOCK = 'orangeflix_auto_discovery_schedule_lock';
 
 const DEFAULT_CONFIG: AutoDiscoveryScheduleConfig = {
   isEnabled: true,
@@ -64,6 +64,7 @@ class AutoDiscoverySchedulerService {
   private currentCountry: string | null = null;
   private logs: AutoDiscoveryLogEntry[] = [];
   private isInitialized = false;
+  private scheduleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.loadLocalConfig();
@@ -132,27 +133,43 @@ class AutoDiscoverySchedulerService {
     if (!this.config.isEnabled) return false;
     if (this.isRunning) return false;
 
+    const now = new Date();
     const lastRunRaw = localStorage.getItem(STORAGE_KEY_LAST_RUN);
-    if (!lastRunRaw) return true; // Never run before
+    const lastRun = lastRunRaw ? new Date(lastRunRaw) : null;
+    const isScheduledSlot =
+      this.config.scheduledDays.includes(now.getUTCDay()) &&
+      now.getUTCHours() === this.config.scheduledHourUTC;
 
-    const lastRunTime = new Date(lastRunRaw).getTime();
-    const now = Date.now();
-    const elapsed = now - lastRunTime;
+    return isScheduledSlot && (!lastRun || lastRun.toISOString().slice(0, 13) !== now.toISOString().slice(0, 13));
+  }
 
-    // If >36 hours have elapsed and today is one of the target days (Mon, Wed, Fri) or overdue (>72h)
-    const todayDay = new Date().getUTCDay();
-    const isTargetDay = this.config.scheduledDays.includes(todayDay);
-
-    if (elapsed >= MIN_SCAN_INTERVAL_MS && isTargetDay) {
-      return true;
+  private scheduleNextAutomaticScan(): void {
+    if (this.scheduleTimer) {
+      clearTimeout(this.scheduleTimer);
+      this.scheduleTimer = null;
     }
+    if (!this.config.isEnabled) return;
 
-    // If more than 3.5 days elapsed without a scan, trigger catch-up
-    if (elapsed >= 84 * 60 * 60 * 1000) {
-      return true;
-    }
+    const nextRun = this.getNextScheduledRun();
+    const delay = Math.max(0, nextRun.getTime() - Date.now());
+    this.scheduleTimer = setTimeout(() => {
+      this.scheduleTimer = null;
+      const scheduledSlot = new Date(nextRun).toISOString().slice(0, 13);
+      const lock = localStorage.getItem(STORAGE_KEY_SCHEDULE_LOCK);
+      if (lock === scheduledSlot) {
+        this.scheduleNextAutomaticScan();
+        return;
+      }
 
-    return false;
+      if (this.isScanDue() && YouTubeClient.hasApiKey()) {
+        localStorage.setItem(STORAGE_KEY_SCHEDULE_LOCK, scheduledSlot);
+        void this.runMultiCountryAutoDiscovery('scheduler_cron').finally(() => {
+          this.scheduleNextAutomaticScan();
+        });
+      } else {
+        this.scheduleNextAutomaticScan();
+      }
+    }, delay);
   }
 
   /**
@@ -180,13 +197,8 @@ class AutoDiscoverySchedulerService {
       }
     }
 
-    // If due and YouTube API key is available, run background discovery
-    if (this.isScanDue() && YouTubeClient.hasApiKey()) {
-      console.log('[AutoDiscovery] 3x/week scheduled scan is due. Launching background multi-country discovery...');
-      setTimeout(() => {
-        void this.runMultiCountryAutoDiscovery('client_background');
-      }, 5000); // 5 second grace period after app load
-    }
+    // Register the next scheduled slot; app activity never triggers a scan.
+    this.scheduleNextAutomaticScan();
   }
 
   /**
@@ -229,6 +241,10 @@ class AutoDiscoverySchedulerService {
 
           if (result.apiError) {
             errors.push(`${country.countryCode}: ${result.apiError}`);
+            if (result.apiError.includes('429') || result.apiError.includes('rateLimitExceeded')) {
+              console.warn('[AutoDiscovery] YouTube quota exhausted. Stopping the remaining country scans.');
+              break;
+            }
           }
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -306,6 +322,7 @@ class AutoDiscoverySchedulerService {
   public updateConfig(newConfig: Partial<AutoDiscoveryScheduleConfig>): AutoDiscoveryScheduleConfig {
     this.config = { ...this.config, ...newConfig };
     this.saveConfigToStorage();
+    this.scheduleNextAutomaticScan();
 
     if (firestore) {
       void setDoc(

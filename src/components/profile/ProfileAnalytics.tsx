@@ -24,11 +24,13 @@ const COLORS = ['#f97316', '#eab308', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6'
 
 export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyticsProps) {
   const [timeframe, setTimeframe] = useState<'7d' | '30d' | 'all'>('30d');
+  const cutoff = timeframe === '7d' ? Date.now() - 7 * 24 * 60 * 60 * 1000 : timeframe === '30d' ? Date.now() - 30 * 24 * 60 * 60 * 1000 : 0;
+  const history = watchHistory.filter((item) => !cutoff || new Date(item.watchedAt).getTime() >= cutoff);
 
   // Compute Genre Distribution
   const genreCounts: { [key: string]: number } = {};
-  watchHistory.forEach((item) => {
-    (item.genre || ['Action']).forEach((g) => {
+  history.forEach((item) => {
+    (item.genre || []).forEach((g) => {
       genreCounts[g] = (genreCounts[g] || 0) + 1;
     });
   });
@@ -38,16 +40,7 @@ export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyti
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
-  // Fallback if low data
-  const displayGenreData =
-    genreData.length > 0
-      ? genreData
-      : [
-          { name: 'Action', value: 40 },
-          { name: 'Sci-Fi', value: 25 },
-          { name: 'Drama', value: 20 },
-          { name: 'Thriller', value: 15 },
-        ];
+  const displayGenreData = genreData;
 
   // Time of Day distribution (Morning, Afternoon, Evening, Night)
   const timeOfDayCounts = {
@@ -57,7 +50,7 @@ export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyti
     'Night (12am-6am)': 0,
   };
 
-  watchHistory.forEach((h) => {
+  history.forEach((h) => {
     const hour = new Date(h.watchedAt).getHours();
     if (hour >= 6 && hour < 12) timeOfDayCounts['Morning (6am-12pm)']++;
     else if (hour >= 12 && hour < 18) timeOfDayCounts['Afternoon (12pm-6pm)']++;
@@ -67,8 +60,10 @@ export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyti
 
   const timeOfDayData = Object.entries(timeOfDayCounts).map(([period, count]) => ({
     period: period.split(' ')[0],
-    streams: count > 0 ? count : (watchHistory.length > 0 ? 1 : 0),
+    streams: count,
   }));
+  const watchedSeconds = history.reduce((sum, item) => sum + Math.max(0, item.progressSeconds || 0), 0);
+  const averageMinutes = history.length ? Math.round(watchedSeconds / history.length / 60) : 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -126,32 +121,7 @@ export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyti
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="h-52 w-52 shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={displayGenreData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {displayGenreData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0b101d',
-                      border: '1px solid rgba(249,115,22,0.4)',
-                      borderRadius: '8px',
-                      color: '#ffffff',
-                      fontSize: '12px',
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              {displayGenreData.length ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={displayGenreData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value">{displayGenreData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip contentStyle={{ backgroundColor: '#0b101d', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '8px', color: '#ffffff', fontSize: '12px' }} /></PieChart></ResponsiveContainer> : <div className="grid h-full place-items-center rounded-full border border-dashed border-gray-700 p-8 text-center text-xs text-gray-500">Watch a title to unlock your genre profile.</div>}
             </div>
 
             <div className="flex-1 w-full space-y-2">
@@ -215,9 +185,7 @@ export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyti
               Viewing Pattern Analysis
             </h4>
             <p className="text-gray-300 text-xs leading-relaxed max-w-xl">
-              You prefer <strong>{stats.moviesWatched >= stats.seriesWatched ? 'Cinema Movies' : 'TV Series'}</strong> with a heavy leaning towards{' '}
-              <strong>{stats.favoriteGenre || 'Action'}</strong>. Your average stream session lasts around{' '}
-              <strong>{stats.totalHoursWatched > 0 ? Math.round((stats.totalHoursWatched / Math.max(1, watchHistory.length)) * 60) : 45} minutes</strong>.
+              {history.length ? <>You prefer <strong>{stats.moviesWatched >= stats.seriesWatched ? 'Cinema Movies' : 'TV Series'}</strong>{displayGenreData[0] ? <> with a strong interest in <strong>{displayGenreData[0].name}</strong></> : ''}. Your average recorded session lasts <strong>{averageMinutes} minutes</strong>.</> : <>Start watching to unlock a personal picture of your genres, preferred format, and viewing rhythm.</>}
             </p>
           </div>
 
@@ -229,4 +197,3 @@ export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyti
     </div>
   );
 }
-

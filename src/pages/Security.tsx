@@ -120,8 +120,8 @@ export default function Security() {
           </p>
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Button asChild className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs h-9 px-4 rounded-xl">
-              <a href="mailto:tuyambazegilbert05@gmail.com?subject=Security%20Vulnerability%20Report%20-%20OrangeFlix">
-                <Mail className="w-3.5 h-3.5 mr-1.5" /> Report a Security Issue
+              <a href="mailto:orangeflix.service@gmail.com?subject=Security%20Vulnerability%20Report%20-%20OrangeFlix">
+                <Mail className="w-3.5 h-3.5 mr-1.5" /> Report to orangeflix.service@gmail.com
               </a>
             </Button>
             <Button asChild variant="outline" className="border-white/10 text-slate-300 text-xs h-9 px-4 rounded-xl">

@@ -9,6 +9,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import ScrollToTop from '@/components/ScrollToTop';
 import { AutoDiscoveryScheduler } from '@/services/auto-discovery-scheduler';
+import { EmailRetentionService } from '@/services/email-retention-service';
 
 // Primary Pages
 import Home from './pages/Home';
@@ -67,6 +68,7 @@ const queryClient = new QueryClient({
 const App = () => {
   useEffect(() => {
     void AutoDiscoveryScheduler.init();
+    EmailRetentionService.recordActivity();
   }, []);
 
   return (
