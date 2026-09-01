@@ -48,6 +48,7 @@ import { tmdbEndpoints, TMDBMovie } from '@/lib/tmdb/endpoints';
 import { Analytics, AnalyticsReport } from '@/services/analytics';
 import { RecommendationScore } from '@/features/recommendations/engine/types';
 import { computeRecommendationScore } from '@/features/recommendations/engine/scoring';
+import { GeoContentService } from '@/services/geo-content-service';
 import YouTubeGeoAdminTab from '@/components/admin/YouTubeGeoAdminTab';
 import EmailCampaignStudio from '@/components/admin/EmailCampaignStudio';
 import SupportInbox from '@/components/admin/SupportInbox';
@@ -75,6 +76,12 @@ export default function Admin() {
   const [users, setUsers] = useState<User[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [activities, setActivities] = useState<AdminActivity[]>([]);
+  const [geoDiscoveryStats, setGeoDiscoveryStats] = useState<{
+    totalDiscovered: number;
+    publishedMovies: number;
+    pendingReview: number;
+    totalChannels: number;
+  } | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   // Search filters
@@ -276,13 +283,21 @@ export default function Admin() {
         setActivities(logs);
       }
 
-      // 5. Update Stats
+      // 5. Refresh source-specific snapshots separately so each card is honest about what it represents
       const platformStats = await FirebaseData.getPlatformStats();
+      const discoverySnapshot = await GeoContentService.getAdminStats();
+
       setStats({
         ...platformStats,
         totalUsers: allUsers.length,
         totalMovies: combinedMovies.length,
         totalReviews: allReviews.length,
+      });
+      setGeoDiscoveryStats({
+        totalDiscovered: discoverySnapshot.totalDiscovered,
+        publishedMovies: discoverySnapshot.publishedMovies,
+        pendingReview: discoverySnapshot.pendingReview,
+        totalChannels: discoverySnapshot.totalChannels,
       });
     } catch (err) {
       console.error('Error loading admin dashboard data:', err);
@@ -600,11 +615,11 @@ export default function Admin() {
                 <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-                      Global Users
+                      Firebase Users
                     </p>
                     <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalUsers}</h3>
                     <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" /> Registered accounts
+                      <Sparkles className="w-3 h-3" /> Live auth + profile accounts
                     </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center">
@@ -617,11 +632,11 @@ export default function Admin() {
                 <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-                      Custom Titles
+                      Catalog Titles
                     </p>
                     <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalMovies}</h3>
                     <p className="text-xs text-yellow-400 mt-1 flex items-center gap-1">
-                      <Film className="w-3 h-3" /> Direct stream titles
+                      <Film className="w-3 h-3" /> Library snapshot from custom + local catalog
                     </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center">
@@ -634,11 +649,11 @@ export default function Admin() {
                 <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-                      Audience Reviews
+                      Review Queue
                     </p>
                     <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalReviews}</h3>
                     <p className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
-                      <Star className="w-3 h-3" /> Community ratings
+                      <Star className="w-3 h-3" /> Community ratings + comments
                     </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
@@ -651,11 +666,11 @@ export default function Admin() {
                 <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-                      Database Sync
+                      Discovery Index
                     </p>
                     <div className="flex items-center gap-2">
                       <span className="text-xl font-bold text-white">
-                        {firebaseEnabled ? 'Firestore Cloud' : 'Local Standby'}
+                        {geoDiscoveryStats?.totalDiscovered ?? 0}
                       </span>
                     </div>
                     <p className="text-xs text-blue-400 mt-1 flex items-center gap-1">
@@ -664,7 +679,7 @@ export default function Admin() {
                       ) : (
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                       )}
-                      {firebaseEnabled ? 'Connected globally' : 'Awaiting .env keys'}
+                      {firebaseEnabled ? 'YouTube + geo discovery snapshot' : 'Local standby'}
                     </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center">

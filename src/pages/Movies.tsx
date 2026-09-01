@@ -1,9 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useDiscoverMovies, useMovieGenres, useSearchMulti } from '@/hooks/use-tmdb';
 import MovieCard from '@/components/MovieCard';
 import StageSlider from '@/components/StageSlider';
 import GeoCountryShowcase from '@/components/geo/GeoCountryShowcase';
 import { getAllCountries } from '@/features/geo/countryConfig';
+import { GeoContentService } from '@/services/geo-content-service';
+import { GeoContentItem } from '@/types/geo-content';
+import { MediaItem } from '@/types/media';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -12,15 +15,58 @@ import { useNavigate } from 'react-router-dom';
 
 import { HeroSkeleton, MovieGridSkeleton } from '@/components/ui/Skeletons';
 
+const normalizeRegionalTitle = (title?: string) => {
+  const cleaned = (title || 'Regional Cinema').replace(/\s+/g, ' ').trim();
+  const words = cleaned.split(' ').filter(Boolean);
+
+  if (words.length <= 3) {
+    return cleaned;
+  }
+
+  return words.slice(0, 3).join(' ');
+};
+
 export default function Movies() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('all');
   const [sortBy, setSortBy] = useState('popularity.desc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedTerritory, setSelectedTerritory] = useState('RW');
+  const [geoMovies, setGeoMovies] = useState<GeoContentItem[]>([]);
 
   const { data: genresData } = useMovieGenres();
   const countries = useMemo(() => getAllCountries(), []);
+
+  const mapGeoToMediaItem = (movie: GeoContentItem): MediaItem => {
+    const score = Number(movie.score || movie.classificationScore || 0);
+    const rating = Math.min(5, Number((score / 20).toFixed(1)) || 0);
+    const normalizedGenres = (movie.tags || []).slice(0, 3);
+    const title = normalizeRegionalTitle(movie.title);
+
+    const countryCode = (movie.country || movie.countryCode || 'RW').toUpperCase();
+    const countryName = countries.find((c) => c.countryCode.toUpperCase() === countryCode)?.name || countryCode;
+
+    return {
+      id: `geo-${movie.id || movie.youtubeVideoId}`,
+      tmdbId: Number((movie.youtubeVideoId || '').replace(/\D/g, '')) || 0,
+      mediaType: 'movie',
+      title,
+      description: movie.description || 'Regional cinema discovery',
+      posterUrl: movie.thumbnailUrl || movie.thumbnail || '',
+      backdropUrl: null,
+      imageUrl: movie.thumbnailUrl || movie.thumbnail || '',
+      rating,
+      voteAverage: score,
+      voteCount: Number(movie.views || movie.viewCount || 0),
+      releaseDate: movie.publishedAt || null,
+      releaseYear: movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : null,
+      genres: normalizedGenres.length > 0 ? normalizedGenres : ['Regional'],
+      duration: Math.round((movie.durationSeconds || 0) / 60),
+      popularity: Number(movie.views || movie.viewCount || 0),
+      _countryLabel: countryName,
+    } as MediaItem & { _countryLabel?: string };
+  };
 
   // If search query is present, use multi-search filtered to movies
   const isSearching = searchQuery.trim().length > 0;
@@ -33,17 +79,23 @@ export default function Movies() {
     page: currentPage,
   });
 
-  const activeData = isSearching
-    ? {
-        items: searchData?.items.filter((item) => item.mediaType === 'movie') || [],
-        totalPages: searchData?.totalPages || 1,
-        totalResults: searchData?.totalResults || 0,
-      }
-    : {
-        items: discoverData?.items || [],
-        totalPages: discoverData?.totalPages || 1,
-        totalResults: discoverData?.totalResults || 0,
-      };
+  const geoCatalogItems = useMemo(() => geoMovies.map(mapGeoToMediaItem), [geoMovies]);
+
+  const activeData = useMemo(() => {
+    const baseItems = isSearching
+      ? (searchData?.items.filter((item) => item.mediaType === 'movie') || [])
+      : (discoverData?.items || []);
+
+    const mergedMap = new Map<string, MediaItem>();
+    baseItems.forEach((item) => mergedMap.set(item.id, item));
+    geoCatalogItems.forEach((item) => mergedMap.set(item.id, item));
+
+    return {
+      items: Array.from(mergedMap.values()),
+      totalPages: isSearching ? (searchData?.totalPages || 1) : (discoverData?.totalPages || 1),
+      totalResults: isSearching ? (searchData?.totalResults || 0) : (discoverData?.totalResults || 0),
+    };
+  }, [isSearching, searchData, discoverData, geoCatalogItems]);
 
   const isLoading = isSearching ? isSearchLoading : isDiscoverLoading;
   const totalPages = Math.min(activeData.totalPages, 500);
@@ -66,6 +118,22 @@ export default function Movies() {
     setCurrentPage(1);
   };
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadGeoMovies = async () => {
+      const items = await GeoContentService.getRecommendations(selectedTerritory, 8);
+      if (isMounted) {
+        setGeoMovies(items);
+      }
+    };
+
+    void loadGeoMovies();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedTerritory]);
+
   return (
     <div className="min-h-screen bg-[#080d17] text-white overflow-x-hidden">
       {/* 3D StageSlider Hero Section */}
@@ -78,6 +146,12 @@ export default function Movies() {
       )}
 
       <main className="page-wrap py-6 space-y-6">
+        <GeoCountryShowcase
+          currentCountryCode={selectedTerritory}
+          countries={countries}
+          onSelectCountry={(code) => setSelectedTerritory(code.toUpperCase())}
+        />
+
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>

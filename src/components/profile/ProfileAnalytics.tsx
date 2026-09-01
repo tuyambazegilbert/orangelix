@@ -14,6 +14,7 @@ import {
   Cell,
 } from 'recharts';
 import { PieChart as PieIcon, BarChart3, Clock, Film, Sparkles } from 'lucide-react';
+import { normalizeIsoDate } from '@/lib/utils';
 
 interface ProfileAnalyticsProps {
   watchHistory: WatchHistoryItem[];
@@ -25,7 +26,11 @@ const COLORS = ['#f97316', '#eab308', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6'
 export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyticsProps) {
   const [timeframe, setTimeframe] = useState<'7d' | '30d' | 'all'>('30d');
   const cutoff = timeframe === '7d' ? Date.now() - 7 * 24 * 60 * 60 * 1000 : timeframe === '30d' ? Date.now() - 30 * 24 * 60 * 60 * 1000 : 0;
-  const history = watchHistory.filter((item) => !cutoff || new Date(item.watchedAt).getTime() >= cutoff);
+  const history = watchHistory.filter((item) => {
+    if (!cutoff) return true;
+    const ts = new Date(normalizeIsoDate(item.watchedAt)).getTime();
+    return Number.isNaN(ts) ? false : ts >= cutoff;
+  });
 
   // Compute Genre Distribution
   const genreCounts: { [key: string]: number } = {};
@@ -51,7 +56,8 @@ export default function ProfileAnalytics({ watchHistory, stats }: ProfileAnalyti
   };
 
   history.forEach((h) => {
-    const hour = new Date(h.watchedAt).getHours();
+    const date = new Date(normalizeIsoDate(h.watchedAt));
+    const hour = date.getHours();
     if (hour >= 6 && hour < 12) timeOfDayCounts['Morning (6am-12pm)']++;
     else if (hour >= 12 && hour < 18) timeOfDayCounts['Afternoon (12pm-6pm)']++;
     else if (hour >= 18 && hour < 24) timeOfDayCounts['Evening (6pm-12am)']++;

@@ -17,6 +17,17 @@ import { MediaItem } from '@/types/media';
 
 import { HeroSkeleton } from '@/components/ui/Skeletons';
 
+const normalizeRegionalTitle = (title?: string) => {
+  const cleaned = (title || 'Regional Cinema').replace(/\s+/g, ' ').trim();
+  const words = cleaned.split(' ').filter(Boolean);
+
+  if (words.length <= 3) {
+    return cleaned;
+  }
+
+  return `${words.slice(0, 3).join(' ')}`;
+};
+
 export default function Home() {
   const navigate = useNavigate();
   const trending = useTrending('all', 'week');
@@ -27,9 +38,45 @@ export default function Home() {
   const { currentUser } = useAuth();
   const [history, setHistory] = useState<WatchHistoryItem[]>([]);
   const [geoCinemaItems, setGeoCinemaItems] = useState<GeoContentItem[]>([]);
+  const [geoCinemaLoading, setGeoCinemaLoading] = useState(true);
 
   const countries = useMemo(() => getAllCountries(), []);
-  const featured = trending.data?.items?.slice(0, 6) || [];
+  const landingCountryCodes = ['RW', 'UG', 'KE', 'NG', 'GH', 'TZ', 'ZA'];
+
+  const geoFeaturedItems = useMemo(() => {
+    if (!geoCinemaItems.length) return [] as MediaItem[];
+
+    return geoCinemaItems.slice(0, 2).map((item) => {
+      const countryCode = (item.country || item.countryCode || 'RW').toUpperCase();
+      const countryName = countries.find((country) => country.countryCode.toUpperCase() === countryCode)?.name || countryCode;
+
+      return {
+        id: `geo-feature-${item.youtubeVideoId || item.id}`,
+        tmdbId: Number((item.youtubeVideoId || '').replace(/\D/g, '')) || 0,
+        mediaType: 'movie',
+        title: normalizeRegionalTitle(item.title),
+        description: item.description || 'Regional cinema discovery',
+        posterUrl: item.thumbnailUrl || item.thumbnail || '',
+        backdropUrl: null,
+        imageUrl: item.thumbnailUrl || item.thumbnail || '',
+        rating: Math.min(5, Number(((Number(item.score || item.classificationScore || 0) / 20)).toFixed(1)) || 0),
+        voteAverage: Number(item.score || item.classificationScore || 0),
+        voteCount: Number(item.views || item.viewCount || 0),
+        releaseDate: item.publishedAt || null,
+        releaseYear: item.publishedAt ? new Date(item.publishedAt).getFullYear() : null,
+        genres: (item.tags || []).slice(0, 3),
+        duration: item.durationSeconds ? Math.round(item.durationSeconds / 60) : null,
+        popularity: Number(item.views || item.viewCount || 0),
+        _countryLabel: countryName,
+      } as MediaItem & { _countryLabel?: string };
+    });
+  }, [countries, geoCinemaItems]);
+
+  const featured = useMemo(() => {
+    const base = trending.data?.items?.slice(0, 6) || [];
+    if (!geoFeaturedItems.length) return base;
+    return [...geoFeaturedItems, ...base].slice(0, 6);
+  }, [geoFeaturedItems, trending.data?.items]);
 
   useEffect(() => {
     if (!currentUser) { setHistory([]); return; }
@@ -39,15 +86,41 @@ export default function Home() {
   // Load African & Regional Cinema highlights
   useEffect(() => {
     let isMounted = true;
-    GeoContentService.getRecommendations('RW', 8).then((items) => {
-      if (isMounted && items.length > 0) {
-        setGeoCinemaItems(items);
+
+    const loadLandingGeoHighlights = async () => {
+      setGeoCinemaLoading(true);
+
+      try {
+        const batches = await Promise.all(
+          landingCountryCodes.map((countryCode) => GeoContentService.getRecommendations(countryCode, 4))
+        );
+
+        const merged = batches.flat();
+        const uniqueById = new Map<string, GeoContentItem>();
+
+        merged.forEach((item) => {
+          const key = (item.youtubeVideoId || item.id || item.slug || '').toString();
+          if (key && !uniqueById.has(key)) {
+            uniqueById.set(key, item);
+          }
+        });
+
+        if (isMounted) {
+          setGeoCinemaItems(Array.from(uniqueById.values()).slice(0, 12));
+        }
+      } finally {
+        if (isMounted) {
+          setGeoCinemaLoading(false);
+        }
       }
-    });
+    };
+
+    void loadLandingGeoHighlights();
+
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [landingCountryCodes]);
 
   const continueItems: MediaItem[] = history.filter((item) => item.progressSeconds > 0 && item.progressSeconds < (item.durationSeconds || 7200) * .95).map((item) => ({
     id: item.contentId, tmdbId: item.tmdbId || Number(item.contentId.replace(/\D/g, '')) || 0, mediaType: item.mediaType, title: item.title, description: '', posterUrl: item.posterUrl || null, backdropUrl: null, imageUrl: item.posterUrl || '', rating: 0, voteAverage: 0, voteCount: 0, releaseDate: null, releaseYear: null, genres: item.genre || [], duration: item.durationSeconds ? Math.round(item.durationSeconds / 60) : null,
@@ -83,6 +156,21 @@ export default function Home() {
       )}
 
       <main className="page-wrap space-y-6 py-6">
+        <section className="space-y-3 rounded-2xl border border-white/[.08] bg-[#0d1320]/80 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="section-eyebrow mb-1 text-orange-300">Multi-country cinema</p>
+              <h2 className="text-xl font-black text-white">Explore other territories</h2>
+            </div>
+            <Link to="/movies" className="text-xs font-semibold text-orange-300 hover:text-orange-200">Open catalog →</Link>
+          </div>
+          <GeoCountryShowcase
+            currentCountryCode="RW"
+            countries={countries}
+            onSelectCountry={(code) => navigate(`/${code.toLowerCase()}/movies`)}
+          />
+        </section>
+
         <ContentRail title="Trending now" eyebrow="Most watched this week" items={trending.data?.items?.slice(6, 18) || []} href="/trending" loading={trending.isLoading} />
         {continueItems.length > 0 && <ContentRail title="Continue watching" eyebrow="Pick up where you left off" items={continueItems} href="/profile" variant="continue" progressById={continueProgress} />}
         <ContentRail title="Popular movies" eyebrow="Find your next favorite" items={movies.data?.items?.slice(0, 12) || []} href="/movies" loading={movies.isLoading} />
@@ -110,23 +198,22 @@ export default function Home() {
         <ContentRail title="New in theatres" eyebrow="Fresh arrivals" items={releases.data?.items?.slice(0, 12) || []} href="/new" loading={releases.isLoading} />
         <ContentRail title="Recommended for you" eyebrow="Highly rated picks" items={topRated.data?.items?.slice(0, 12) || []} href="/movies?sort=rating" loading={topRated.isLoading} />
         
-        {/* Geo Cinema Section Placed at Bottom of Landing Page */}
+        {/* Geo Cinema Section Placed Prominently on Landing Page */}
         <section className="pt-4 border-t border-gray-800/80 space-y-4">
-          <GeoCountryShowcase
-            currentCountryCode="RW"
-            countries={countries}
-            onSelectCountry={(code) => navigate(`/${code.toLowerCase()}/movies`)}
-          />
+          {geoCinemaLoading && geoCinemaItems.length === 0 ? (
+            <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 px-4 py-3 text-xs text-orange-200">
+              Loading cinema from multiple territories...
+            </div>
+          ) : null}
 
-          {/* African & Regional Cinema Spotlight Rail */}
           {geoCinemaItems.length > 0 && (
             <GeoContentRail
-              title="African & Regional Cinema Spotlight"
-              eyebrow="Full Movies from YouTube"
+              title="African & Global Cinema Spotlight"
+              eyebrow="Multi-country regional premieres"
               icon={<Film className="w-3 h-3 text-orange-400" />}
               items={geoCinemaItems}
               countryCode="RW"
-              onSeeAll={() => navigate('/rw/movies')}
+              onSeeAll={() => navigate('/movies')}
             />
           )}
         </section>

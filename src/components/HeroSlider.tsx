@@ -97,7 +97,9 @@ export default function HeroSlider({ movies }: HeroSliderProps) {
             </div>
             
             <h1 className="text-5xl lg:text-7xl font-bold text-white mb-6 leading-tight">
-              {currentMovie.title}
+              <Link to={`/watch/${currentMovie.id}`} className="hover:text-orange-400 transition-colors">
+                {currentMovie.title}
+              </Link>
             </h1>
             
             <p className="text-xl text-gray-200 mb-8 leading-relaxed line-clamp-3">

@@ -23,6 +23,7 @@ import {
   Bookmark,
 } from 'lucide-react';
 import { POSTER_FALLBACK } from '@/lib/tmdb/images';
+import { normalizeIsoDate } from '@/lib/utils';
 import {
   AreaChart,
   Area,
@@ -72,6 +73,11 @@ export default function ProfileOverview({
   const completedCount = completenessItems.filter((i) => i.completed).length;
   const completenessPercent = Math.round((completedCount / completenessItems.length) * 100);
 
+  const safeWatchedAt = (value: unknown) => {
+    const iso = normalizeIsoDate(value);
+    return typeof iso === 'string' ? iso : new Date().toISOString();
+  };
+
   // Achievements derived from real user activity
   const achievements: Achievement[] = [
     {
@@ -116,11 +122,11 @@ export default function ProfileOverview({
       description: 'Watched a movie during midnight hours',
       icon: '🌙',
       unlocked: watchHistory.some((h) => {
-        const hour = new Date(h.watchedAt).getHours();
+        const hour = new Date(safeWatchedAt(h.watchedAt)).getHours();
         return hour >= 0 && hour <= 4;
       }),
       progress: watchHistory.some((h) => {
-        const hour = new Date(h.watchedAt).getHours();
+        const hour = new Date(safeWatchedAt(h.watchedAt)).getHours();
         return hour >= 0 && hour <= 4;
       }) ? 1 : 0,
       maxProgress: 1,
@@ -137,9 +143,10 @@ export default function ProfileOverview({
     const dateStr = d.toISOString().split('T')[0];
 
     // Calculate total minutes watched on this day
-    const minutes = watchHistory
-      .filter((h) => h.watchedAt.startsWith(dateStr))
-      .reduce((sum, h) => sum + Math.round(h.progressSeconds / 60), 0);
+    const minutes = watchHistory.reduce((sum, h) => {
+      const watchedAt = safeWatchedAt(h.watchedAt);
+      return watchedAt.startsWith(dateStr) ? sum + Math.round((h.progressSeconds || 0) / 60) : sum;
+    }, 0);
 
     return {
       day: dayLabel,

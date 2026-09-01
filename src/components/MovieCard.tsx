@@ -21,6 +21,8 @@ export default function MovieCard({ movie, onFavoriteChange }: MovieCardProps) {
   const detail = `/${isTv ? 'series' : 'movie'}/${media ? movie.tmdbId : movie.id}`;
   const image = failed ? POSTER_FALLBACK : (movie.imageUrl || (movie as MediaItem).posterUrl || POSTER_FALLBACK);
   const rating = media ? movie.voteAverage : movie.rating;
+  const countryLabel = (movie as MediaItem & { _countryLabel?: string })._countryLabel;
+  const isRegionalDiscovery = Boolean(countryLabel);
   const save = (event: React.MouseEvent) => { event.preventDefault(); event.stopPropagation(); if (!currentUser) return toast.error('Sign in to save titles'); const saved = MovieService.isFavorite(id, currentUser.id); if (saved) { MovieService.removeFromFavorites(id, currentUser.id); void FirebaseData.removeFavorites(currentUser.id, id); toast.success('Removed from favorites'); } else { MovieService.addToFavorites(id, currentUser.id, { tmdbId: media ? movie.tmdbId : undefined, mediaType: isTv ? 'tv' : 'movie', cachedMedia: movie }); void FirebaseData.setFavorites(currentUser.id, movie); toast.success('Added to favorites'); } onFavoriteChange?.(); };
   const watchPath = `/watch/${id}`;
   const openWatch = (event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) => { if ((event.target as HTMLElement).closest('a,button')) return; navigate(watchPath); };
@@ -32,7 +34,19 @@ export default function MovieCard({ movie, onFavoriteChange }: MovieCardProps) {
         <div className="flex gap-1.5"><button onClick={save} className="grid h-8 w-8 place-items-center rounded-full bg-white/15 text-white backdrop-blur hover:bg-white/25" aria-label={`Save ${movie.title}`}><BookmarkPlus className="h-3.5 w-3.5" /></button><Link to={detail} className="grid h-8 w-8 place-items-center rounded-full bg-white/15 text-white backdrop-blur hover:bg-white/25" aria-label={`Details for ${movie.title}`}><Info className="h-3.5 w-3.5" /></Link></div>
       </div>
       <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-[#090d15]/80 px-1.5 py-1 text-[10px] font-semibold text-white backdrop-blur"><Star className="h-2.5 w-2.5 fill-orange-400 text-orange-400" />{Number(rating || 0).toFixed(1)}</span>
+      {isRegionalDiscovery && (
+        <span className="absolute right-2 top-2 rounded-md bg-orange-500/90 px-1.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white shadow-sm">
+          Regional
+        </span>
+      )}
     </div>
-    <div className="p-2.5"><Link to={watchPath} className="block truncate text-[13px] font-semibold text-slate-100 transition hover:text-orange-300">{movie.title}</Link><p className="mt-1 truncate text-[11px] text-slate-500">{movie.releaseYear || '—'} <span className="px-1 text-slate-700">•</span> {(media ? movie.genres?.[0] : movie.genre?.[0]) || (isTv ? 'Series' : 'Movie')}</p></div>
+    <div className="p-2.5">
+      <Link to={watchPath} className="block truncate text-[13px] font-semibold text-slate-100 transition hover:text-orange-300">{movie.title}</Link>
+      <p className="mt-1 truncate text-[11px] text-slate-500">
+        {countryLabel ? `${countryLabel} • ` : ''}{movie.releaseYear || '—'}
+        <span className="px-1 text-slate-700">•</span>
+        {(media ? movie.genres?.[0] : movie.genre?.[0]) || (isTv ? 'Series' : 'Movie')}
+      </p>
+    </div>
   </article>;
 }

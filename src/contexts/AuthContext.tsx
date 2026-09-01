@@ -16,7 +16,7 @@ import {
 import { AuthContextType, User } from '@/types';
 import { AuthService } from '@/lib/auth';
 import { firebaseAuth, firebaseEnabled } from '@/lib/firebase';
-import { FirebaseData } from '@/lib/firebase-data';
+import { FirebaseData, isAdminEmail } from '@/lib/firebase-data';
 import { EmailService } from '@/services/email-service';
 
 const defaultAuthContext: AuthContextType = {
@@ -69,8 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             id: fbUser.uid,
             email: fbUser.email || '',
             name: fbUser.displayName || fbUser.email?.split('@')[0] || 'OrangeFlix Member',
-            isAdmin: false,
-            role: 'member',
+            isAdmin: isAdminEmail(fbUser.email),
+            role: isAdminEmail(fbUser.email) ? 'admin' : 'member',
             photoURL: fbUser.photoURL || '',
             status: 'active',
             createdAt: new Date().toISOString(),

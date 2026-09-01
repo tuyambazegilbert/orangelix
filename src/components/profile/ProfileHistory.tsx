@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { POSTER_FALLBACK } from '@/lib/tmdb/images';
+import { normalizeIsoDate } from '@/lib/utils';
 
 interface ProfileHistoryProps {
   watchHistory: WatchHistoryItem[];
@@ -57,7 +58,8 @@ export default function ProfileHistory({
     };
 
     items.forEach((item) => {
-      const itemDate = new Date(item.watchedAt);
+      const itemDate = new Date(normalizeIsoDate(item.watchedAt));
+      if (Number.isNaN(itemDate.getTime())) return;
       if (itemDate >= today) {
         groups.Today.push(item);
       } else if (itemDate >= yesterday) {
@@ -197,7 +199,7 @@ export default function ProfileHistory({
                                 {item.mediaType === 'tv' ? 'Series' : 'Movie'}
                               </Badge>
                               <span className="text-[10px] text-gray-500">
-                                {new Date(item.watchedAt).toLocaleTimeString([], {
+                                {new Date(normalizeIsoDate(item.watchedAt)).toLocaleTimeString([], {
                                   hour: '2-digit',
                                   minute: '2-digit',
                                 })}

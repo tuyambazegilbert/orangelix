@@ -1,0 +1,41 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "geoContent",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "countryCode", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "geoContent",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "countryCode", "order": "ASCENDING" },
+        { "fieldPath": "classification", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "geoEpisodes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "seriesId", "order": "ASCENDING" },
+        { "fieldPath": "seasonNumber", "order": "ASCENDING" },
+        { "fieldPath": "episodeNumber", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "trustedChannels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "country", "order": "ASCENDING" },
+        { "fieldPath": "trust", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

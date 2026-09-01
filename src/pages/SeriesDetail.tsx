@@ -27,7 +27,10 @@ import {
   Users,
   Layers,
   Music2,
+  Download,
+  CheckCircle2,
 } from 'lucide-react';
+import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { PROFILE_FALLBACK, POSTER_FALLBACK, BACKDROP_FALLBACK } from '@/lib/tmdb/images';
@@ -37,6 +40,7 @@ import { DetailHeroSkeleton } from '@/components/ui/Skeletons';
 export default function SeriesDetail() {
   const { id } = useParams<{ id: string }>();
   const { currentUser } = useAuth();
+  const { startDownload, isDownloaded, getDownloadProgress } = useOfflineDownloads();
   const seriesId = id ? parseInt(id, 10) : undefined;
   const { data: series, isLoading, error } = useSeriesDetails(seriesId);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
@@ -186,7 +190,7 @@ export default function SeriesDetail() {
           items={[
             { name: 'TV Series', url: '/series' },
             ...(series.genres?.[0]
-              ? [{ name: series.genres[0], url: `/genres/${series.genres[0].toLowerCase().replace(/\s+/g, '-')}` }]
+              ? [{ name: series.genres[0], url: `/genres/${toGenreSlug(series.genres[0]) || ''}` }]
               : []),
             { name: series.title, url: `/series/${series.tmdbId}` },
           ]}
@@ -194,14 +198,27 @@ export default function SeriesDetail() {
 
         {/* Main Details Layout */}
         <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-center md:items-start">
-          {/* Poster Card */}
-          <div className="w-48 sm:w-64 md:w-72 lg:w-80 shrink-0 mx-auto md:mx-0 rounded-2xl overflow-hidden shadow-2xl border border-orange-500/20 bg-gray-900 group">
+          {/* Poster Card (Clickable to Watch) */}
+          <Link
+            to={`/watch/tv-${series.tmdbId}`}
+            aria-label={`Watch ${series.title}`}
+            className="w-48 sm:w-64 md:w-72 lg:w-80 shrink-0 mx-auto md:mx-0 rounded-2xl overflow-hidden shadow-2xl border border-orange-500/30 bg-gray-900 group relative block cursor-pointer"
+          >
             <img
               src={series.posterUrl || POSTER_FALLBACK}
               alt={series.title}
               className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-500"
             />
-          </div>
+            {/* Animated Play Button Overlay on Hover */}
+            <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center gap-2">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-orange-600 to-amber-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/50 transform scale-90 group-hover:scale-100 transition-transform duration-300">
+                <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-0.5" />
+              </div>
+              <span className="text-xs sm:text-sm font-bold text-white tracking-wide uppercase drop-shadow-md">
+                Watch Series Now
+              </span>
+            </div>
+          </Link>
 
           {/* Metadata Info */}
           <div className="flex-1 space-y-6">
@@ -251,7 +268,7 @@ export default function SeriesDetail() {
                 {series.genres.map((genre) => (
                   <Link
                     key={genre}
-                    to={`/genres/${genre.toLowerCase().replace(/\s+/g, '-')}`}
+                    to={toGenreSlug(genre) ? `/genres/${toGenreSlug(genre)}` : '/genres'}
                     className="bg-gray-800/80 backdrop-blur-sm text-gray-200 px-3 py-1 rounded-full text-xs border border-gray-700 hover:border-orange-400/50 hover:text-white transition"
                   >
                     {genre}
@@ -318,6 +335,44 @@ export default function SeriesDetail() {
                 >
                   <Clock className={`w-5 h-5 mr-2 ${isInLater ? 'text-yellow-400' : ''}`} />
                   {isInLater ? 'Queued' : 'Watch Later'}
+                </Button>
+
+                {/* Download for Offline Button */}
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => {
+                    void startDownload({
+                      id: `tv-${series.tmdbId}`,
+                      title: series.title,
+                      mediaType: 'tv',
+                      posterUrl: series.posterUrl || undefined,
+                      backdropUrl: series.backdropUrl || undefined,
+                      duration: series.duration || undefined,
+                      releaseYear: series.releaseYear,
+                      rating: series.voteAverage,
+                      genres: series.genres,
+                      youtubeVideoId: series.trailerKey || undefined,
+                    });
+                  }}
+                  disabled={isDownloaded(`tv-${series.tmdbId}`) || getDownloadProgress(`tv-${series.tmdbId}`)?.status === 'downloading'}
+                  className={`border-orange-500/30 text-orange-400 hover:bg-orange-500/20 ${
+                    isDownloaded(`tv-${series.tmdbId}`) ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400' : ''
+                  }`}
+                >
+                  {isDownloaded(`tv-${series.tmdbId}`) ? (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 mr-2 text-emerald-400" /> Downloaded
+                    </>
+                  ) : getDownloadProgress(`tv-${series.tmdbId}`)?.status === 'downloading' ? (
+                    <>
+                      <Download className="w-5 h-5 mr-2 animate-bounce text-orange-400" /> {getDownloadProgress(`tv-${series.tmdbId}`)?.progress}%
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-5 h-5 mr-2" /> Download
+                    </>
+                  )}
                 </Button>
               </div>
             </div>

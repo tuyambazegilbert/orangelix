@@ -3,7 +3,7 @@ import { User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { firebaseAuth } from '@/lib/firebase';
 import { FirebaseData } from '@/lib/firebase-data';
-import { deleteUser } from 'firebase/auth';
+import { deleteUser, EmailAuthProvider } from 'firebase/auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,10 +38,14 @@ export default function ProfileSecurity({ currentUser }: ProfileSecurityProps) {
   const navigate = useNavigate();
 
   const [isResetLoading, setIsResetLoading] = useState(false);
+  const [isSettingPassword, setIsSettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [passwordVersion, setPasswordVersion] = useState(0);
 
   // Check connected providers
   const providers = firebaseAuth?.currentUser?.providerData || [];
@@ -61,6 +65,55 @@ export default function ProfileSecurity({ currentUser }: ProfileSecurityProps) {
       }
     } finally {
       setIsResetLoading(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (!firebaseAuth?.currentUser || !currentUser.email) {
+      toast.error('You must be signed in to create a password.');
+      return;
+    }
+
+    if (!newPassword || !confirmPassword) {
+      toast.error('Please enter and confirm your new password.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    setIsSettingPassword(true);
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, newPassword);
+      await firebaseAuth.currentUser.linkWithCredential(credential);
+      await firebaseAuth.currentUser.reload();
+      setPasswordVersion((prev) => prev + 1);
+      setNewPassword('');
+      setConfirmPassword('');
+
+      toast.success('Password created successfully.', {
+        description: 'You can now sign in with your email and password as well as Google.',
+      });
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      console.error('[Set Password Error]', error.code, error.message);
+
+      if (error.code === 'auth/provider-already-linked') {
+        toast.error('A password is already linked to this account.');
+      } else if (error.code === 'auth/invalid-credential') {
+        toast.error('This password could not be linked. Please try again.');
+      } else {
+        toast.error('Failed to create password. Please try again.');
+      }
+    } finally {
+      setIsSettingPassword(false);
     }
   };
 
@@ -184,25 +237,71 @@ export default function ProfileSecurity({ currentUser }: ProfileSecurityProps) {
             </div>
 
             {/* Email / Password Provider */}
-            <div className="p-3.5 rounded-xl bg-gray-950/70 border border-gray-800 flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-400">
-                  <KeyRound className="w-4 h-4" />
+            <div className="p-3.5 rounded-xl bg-gray-950/70 border border-gray-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-400">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-white font-bold text-xs">Email & Password</h4>
+                    <p className="text-[11px] text-gray-400">{currentUser.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-white font-bold text-xs">Email & Password</h4>
-                  <p className="text-[11px] text-gray-400">{currentUser.email}</p>
-                </div>
+                <Badge
+                  className={
+                    hasPassword
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]'
+                      : 'bg-amber-500/15 text-amber-300 border-amber-500/30 text-[10px]'
+                  }
+                >
+                  {hasPassword ? 'Password set' : 'No password'}
+                </Badge>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handlePasswordReset}
-                disabled={isResetLoading}
-                className="border-gray-700 text-gray-300 hover:text-white text-xs"
-              >
-                {isResetLoading ? 'Sending...' : 'Reset Password'}
-              </Button>
+
+              {hasPassword ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePasswordReset}
+                  disabled={isResetLoading}
+                  className="border-gray-700 text-gray-300 hover:text-white text-xs w-full"
+                >
+                  {isResetLoading ? 'Sending...' : 'Reset Password'}
+                </Button>
+              ) : (
+                <div className="space-y-2 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase tracking-wide text-gray-400">New password</label>
+                    <Input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Create a password"
+                      className="h-9 bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase tracking-wide text-gray-400">Confirm password</label>
+                    <Input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm password"
+                      className="h-9 bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+                    />
+                  </div>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleSetPassword}
+                    disabled={isSettingPassword}
+                    className="bg-orange-500 hover:bg-orange-400 text-white text-xs w-full"
+                  >
+                    {isSettingPassword ? 'Setting password...' : 'Set Password'}
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

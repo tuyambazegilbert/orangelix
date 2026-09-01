@@ -4,12 +4,17 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { MiniPlayerProvider } from '@/contexts/MiniPlayerContext';
+import FloatingMiniPlayer from '@/components/watch/FloatingMiniPlayer';
 import { ThemeProvider } from '@/hooks/use-theme';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import ScrollToTop from '@/components/ScrollToTop';
 import { AutoDiscoveryScheduler } from '@/services/auto-discovery-scheduler';
 import { EmailRetentionService } from '@/services/email-retention-service';
+import { PwaService } from '@/services/pwa-service';
+import { useNetworkStatus } from '@/hooks/use-network-status';
+import { WifiOff, Download } from 'lucide-react';
 
 // Primary Pages
 import Home from './pages/Home';
@@ -20,6 +25,7 @@ import ResetPassword from './pages/ResetPassword';
 import Movies from './pages/Movies';
 import Series from './pages/Series';
 import Watch from './pages/Watch';
+import Downloads from './pages/Downloads';
 import Admin from './pages/Admin';
 import Favorites from './pages/Favorites';
 import WatchLater from './pages/WatchLater';
@@ -67,9 +73,12 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
+  const { isOffline } = useNetworkStatus();
+
   useEffect(() => {
     void AutoDiscoveryScheduler.init();
     EmailRetentionService.recordActivity();
+    PwaService.registerServiceWorker();
   }, []);
 
   return (
@@ -77,73 +86,96 @@ const App = () => {
       <ThemeProvider defaultTheme="dark" storageKey="orangeflix-theme">
         <TooltipProvider>
           <AuthProvider>
-            <Toaster />
-            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-              <div className="app-shell flex min-h-screen flex-col">
-                <ScrollToTop />
-                <Navbar />
-                <main className="flex-1">
-                <Routes>
-                  {/* Core Platform */}
-                  <Route path="/" element={<Home />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/register" element={<Register />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-                  <Route path="/auth/action" element={<ResetPassword />} />
-                  <Route path="/movies" element={<Movies />} />
-                  <Route path="/series" element={<Series />} />
-                  <Route path="/movie/:id" element={<MovieDetail />} />
-                  <Route path="/series/:id" element={<SeriesDetail />} />
-                  <Route path="/trending" element={<Trending />} />
-                  <Route path="/new" element={<New />} />
-                  <Route path="/watch/:id" element={<Watch />} />
-                  <Route path="/favorites" element={<Favorites />} />
-                  <Route path="/watchlater" element={<WatchLater />} />
-                  <Route path="/profile" element={<Profile />} />
-                  <Route path="/search" element={<Search />} />
-                  <Route path="/admin" element={<Admin />} />
+            <MiniPlayerProvider>
+              <Toaster />
+              <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <div className="app-shell flex min-h-screen flex-col">
+                  <ScrollToTop />
+                  <Navbar />
 
-                  {/* Discovery Hubs */}
-                  <Route path="/movie-night" element={<MovieNight />} />
-                  <Route path="/tonight" element={<MovieNight />} />
-                  <Route path="/news" element={<News />} />
-                  <Route path="/news/:slug" element={<NewsDetail />} />
-                  <Route path="/news/category/:category" element={<News />} />
-                  <Route path="/music" element={<Music />} />
-                  <Route path="/music/movie/:id" element={<MovieSoundtrack />} />
-                  <Route path="/books" element={<Books />} />
-                  <Route path="/people/:id" element={<PeopleDetail />} />
-                  <Route path="/genres" element={<Genres />} />
-                  <Route path="/genres/:slug" element={<Genres />} />
-                  <Route path="/collections/:slug" element={<Collections />} />
-                  <Route path="/u/:username" element={<PublicProfile />} />
+                  {/* Global Offline Mode Indicator Banner */}
+                  {isOffline && (
+                    <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between shadow-lg sticky top-16 z-40">
+                      <div className="flex items-center gap-2 max-w-4xl mx-auto w-full justify-between">
+                        <span className="flex items-center gap-2">
+                          <WifiOff className="w-4 h-4 text-amber-200 animate-pulse" />
+                          <span>You are offline. OrangeFlix is running in Offline PWA Mode.</span>
+                        </span>
+                        <a
+                          href="/downloads"
+                          className="bg-black/30 hover:bg-black/50 text-white px-3 py-1 rounded-lg border border-white/20 flex items-center gap-1.5 transition text-[11px]"
+                        >
+                          <Download className="w-3.5 h-3.5" /> My Downloads
+                        </a>
+                      </div>
+                    </div>
+                  )}
 
-                  {/* Legal, Trust & Founder Story */}
-                  <Route path="/story-behind" element={<StoryBehind />} />
-                  <Route path="/about" element={<StoryBehind />} />
-                  <Route path="/founder" element={<StoryBehind />} />
-                  <Route path="/security" element={<Security />} />
-                  <Route path="/privacy" element={<PrivacyPolicy />} />
-                  <Route path="/terms" element={<TermsConditions />} />
-                  <Route path="/disclaimer" element={<Disclaimer />} />
-                  <Route path="/support" element={<Support />} />
+                  <main className="flex-1">
+                  <Routes>
+                    {/* Core Platform */}
+                    <Route path="/" element={<Home />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/auth/action" element={<ResetPassword />} />
+                    <Route path="/movies" element={<Movies />} />
+                    <Route path="/series" element={<Series />} />
+                    <Route path="/movie/:id" element={<MovieDetail />} />
+                    <Route path="/series/:id" element={<SeriesDetail />} />
+                    <Route path="/trending" element={<Trending />} />
+                    <Route path="/new" element={<New />} />
+                    <Route path="/watch/:id" element={<Watch />} />
+                    <Route path="/downloads" element={<Downloads />} />
+                    <Route path="/favorites" element={<Favorites />} />
+                    <Route path="/watchlater" element={<WatchLater />} />
+                    <Route path="/profile" element={<Profile />} />
+                    <Route path="/search" element={<Search />} />
+                    <Route path="/admin" element={<Admin />} />
 
-                  {/* Geo-Located YouTube Movie & Series Catalogs */}
-                  <Route path="/:countryCode/movies" element={<CountryMovies />} />
-                  <Route path="/:countryCode/series" element={<CountryMovies />} />
-                  <Route path="/:countryCode/movies/:slug" element={<CountryMovieDetail />} />
-                  <Route path="/:countryCode/watch/:slug" element={<CountryMovieDetail />} />
+                    {/* Discovery Hubs */}
+                    <Route path="/movie-night" element={<MovieNight />} />
+                    <Route path="/tonight" element={<MovieNight />} />
+                    <Route path="/news" element={<News />} />
+                    <Route path="/news/:slug" element={<NewsDetail />} />
+                    <Route path="/news/category/:category" element={<News />} />
+                    <Route path="/music" element={<Music />} />
+                    <Route path="/music/movie/:id" element={<MovieSoundtrack />} />
+                    <Route path="/books" element={<Books />} />
+                    <Route path="/people/:id" element={<PeopleDetail />} />
+                    <Route path="/genres" element={<Genres />} />
+                    <Route path="/genres/:slug" element={<Genres />} />
+                    <Route path="/collections/:slug" element={<Collections />} />
+                    <Route path="/u/:username" element={<PublicProfile />} />
 
-                  {/* 404 Fallback */}
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </main>
-              <GeoRecommendationCard />
-              <WeatherAssistant />
-              <Footer />
-            </div>
-          </BrowserRouter>
+                    {/* Legal, Trust & Founder Story */}
+                    <Route path="/story-behind" element={<StoryBehind />} />
+                    <Route path="/about" element={<StoryBehind />} />
+                    <Route path="/founder" element={<StoryBehind />} />
+                    <Route path="/security" element={<Security />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
+                    <Route path="/terms" element={<TermsConditions />} />
+                    <Route path="/disclaimer" element={<Disclaimer />} />
+                    <Route path="/support" element={<Support />} />
+
+                    {/* Geo-Located YouTube Movie & Series Catalogs */}
+                    <Route path="/:countryCode/movies" element={<CountryMovies />} />
+                    <Route path="/:countryCode/series" element={<CountryMovies />} />
+                    <Route path="/:countryCode/movies/:slug" element={<CountryMovieDetail />} />
+                    <Route path="/:countryCode/watch/:slug" element={<CountryMovieDetail />} />
+
+                    {/* 404 Fallback */}
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </main>
+                <FloatingMiniPlayer />
+                <GeoRecommendationCard />
+                <WeatherAssistant />
+                <Footer />
+              </div>
+            </BrowserRouter>
+          </MiniPlayerProvider>
         </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>

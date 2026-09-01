@@ -46,6 +46,7 @@ import {
 import { toast } from 'sonner';
 
 import { DetailHeroSkeleton, SeriesPlaylistSkeleton } from '@/components/ui/Skeletons';
+import AdvancedCinematicPlayer from '@/components/watch/AdvancedCinematicPlayer';
 
 export default function CountryMovieDetail() {
   const { countryCode: rawCountryCode, slug, id } = useParams<{
@@ -348,14 +349,42 @@ export default function CountryMovieDetail() {
           </div>
         </div>
 
-        {/* Embedded Official YouTube Player */}
-        <section className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/15 bg-black shadow-2xl shadow-black/80 aspect-video w-full">
-          <iframe
-            src={embedUrl}
+        {/* Advanced Cinema Player (Custom Bespoke Controls & Offline Support) */}
+        <section className="w-full">
+          <AdvancedCinematicPlayer
+            id={`geo-${movie.id || movie.youtubeVideoId}`}
             title={movie.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="w-full h-full border-0"
+            poster={movie.thumbnail || movie.thumbnailUrl}
+            backdropUrl={movie.thumbnail || movie.thumbnailUrl}
+            youtubeVideoId={movie.youtubeVideoId}
+            country={country.name}
+            durationMinutes={Math.round((movie.durationSeconds || 0) / 60) || 90}
+            onProgress={(seconds, duration) => {
+              const mid = `geo-${movie.id || movie.youtubeVideoId}`;
+              localStorage.setItem(`orangeflix_progress_${mid}`, String(Math.floor(seconds)));
+              if (currentUser) {
+                void FirebaseData.setHistory(
+                  currentUser.id,
+                  {
+                    id: movie.id,
+                    tmdbId: 0,
+                    mediaType: 'movie',
+                    title: movie.title,
+                    description: movie.description,
+                    posterUrl: movie.thumbnail || movie.thumbnailUrl,
+                    backdropUrl: movie.thumbnail || movie.thumbnailUrl,
+                    duration: Math.round((movie.durationSeconds || 0) / 60),
+                    rating: 4.8,
+                    voteAverage: 9.6,
+                    voteCount: 120,
+                    releaseYear: 2026,
+                    genres: [country.name + ' Cinema'],
+                  },
+                  seconds,
+                  duration
+                );
+              }
+            }}
           />
         </section>
 

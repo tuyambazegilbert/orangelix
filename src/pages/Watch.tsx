@@ -14,7 +14,10 @@ import {
   Play,
   Music2,
   BookOpen,
+  Download,
+  CheckCircle2,
 } from 'lucide-react';
+import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { useMovieDetails, useSeasonDetails, useSeriesDetails, useTrending } from '@/hooks/use-tmdb';
 import { MediaDetail } from '@/types/media';
 import { MovieService } from '@/lib/movies';
@@ -89,6 +92,8 @@ export default function Watch() {
   const [showPostWatch, setShowPostWatch] = useState(false);
   const [postWatchRecs, setPostWatchRecs] = useState<RecommendedItem[]>([]);
   const [hasCompleted, setHasCompleted] = useState(false);
+
+  const { startDownload, isDownloaded, getDownloadProgress } = useOfflineDownloads();
 
   const media = useMemo<MediaDetail | null>(() => {
     if (legacy)
@@ -246,10 +251,14 @@ export default function Watch() {
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
           <CinematicPlayer
+            id={rawId}
             title={media.title}
-            poster={media.backdropUrl || media.imageUrl}
+            poster={media.posterUrl || media.imageUrl}
+            backdropUrl={media.backdropUrl || media.imageUrl}
             videoUrl={directVideo}
             trailerKey={!directVideo ? media.trailerKey : null}
+            youtubeVideoId={!directVideo ? media.trailerKey : null}
+            durationMinutes={media.duration || undefined}
             initialProgress={savedProgress}
             onProgress={persistProgress}
           />
@@ -309,6 +318,46 @@ export default function Watch() {
                 aria-label="Favorite"
               >
                 <Heart className={`h-4 w-4 ${favorite ? 'fill-orange-400 text-orange-400' : ''}`} />
+              </button>
+              {/* Download for Offline Button */}
+              <button
+                onClick={() => {
+                  void startDownload({
+                    id: rawId,
+                    title: media.title,
+                    mediaType: media.mediaType === 'tv' ? 'tv' : 'movie',
+                    posterUrl: media.posterUrl || media.imageUrl,
+                    backdropUrl: media.backdropUrl || media.imageUrl,
+                    duration: media.duration || undefined,
+                    releaseYear: media.releaseYear,
+                    rating: media.voteAverage,
+                    genres: media.genres,
+                    videoUrl: directVideo || undefined,
+                    youtubeVideoId: media.trailerKey || undefined,
+                  });
+                }}
+                disabled={isDownloaded(rawId) || getDownloadProgress(rawId)?.status === 'downloading'}
+                className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+                  isDownloaded(rawId)
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                    : getDownloadProgress(rawId)?.status === 'downloading'
+                    ? 'border-orange-500/40 bg-orange-500/10 text-orange-400 animate-pulse'
+                    : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
+                }`}
+              >
+                {isDownloaded(rawId) ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Downloaded (Offline)
+                  </>
+                ) : getDownloadProgress(rawId)?.status === 'downloading' ? (
+                  <>
+                    <Download className="h-4 w-4 animate-bounce" /> {getDownloadProgress(rawId)?.progress}%
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" /> Download for Offline
+                  </>
+                )}
               </button>
               <button
                 onClick={() => {

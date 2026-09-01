@@ -19,6 +19,17 @@ type StoredContent =
   | Pick<MediaItem, 'tmdbId' | 'mediaType' | 'title' | 'posterUrl' | 'releaseYear' | 'voteAverage'>
   | Pick<Movie, 'id' | 'title' | 'imageUrl' | 'releaseYear' | 'rating' | 'type'>;
 
+const ADMIN_EMAILS = new Set(
+  (import.meta.env.VITE_ADMIN_EMAILS ?? 'admin@orangeflix.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+export function isAdminEmail(email?: string | null): boolean {
+  return !!email && ADMIN_EMAILS.has(email.trim().toLowerCase());
+}
+
 const contentId = (content: StoredContent) =>
   'tmdbId' in content && content.tmdbId ? `${content.mediaType}-${content.tmdbId}` : (content as { id: string }).id;
 
@@ -106,10 +117,8 @@ export const FirebaseData = {
       id: user.uid,
       email: user.email || '',
       name: extra?.name || user.displayName || user.email?.split('@')[0] || 'OrangeFlix Member',
-      // Privileges are granted only by an existing secure admin workflow, never
-      // inferred from an email address in browser code.
-      isAdmin: extra?.isAdmin ?? false,
-      role: (extra?.isAdmin ?? false) ? 'admin' : 'member',
+      isAdmin: extra?.isAdmin ?? isAdminEmail(user.email),
+      role: (extra?.isAdmin ?? isAdminEmail(user.email)) ? 'admin' : 'member',
       photoURL: user.photoURL || '',
       status: 'active',
       createdAt: user.metadata?.creationTime || new Date().toISOString(),
@@ -124,7 +133,7 @@ export const FirebaseData = {
 
       if (existing.exists()) {
         const d = existing.data();
-        const isAdmin = extra?.isAdmin ?? d.isAdmin ?? defaultUser.isAdmin;
+        const isAdmin = extra?.isAdmin ?? d.isAdmin ?? isAdminEmail(user.email) ?? defaultUser.isAdmin;
         const role = isAdmin ? 'admin' : (d.role || 'member');
         const resolvedName = d.name || extra?.name || user.displayName || defaultUser.name;
         const resolvedPhoto = d.photoURL || user.photoURL || '';
@@ -171,6 +180,8 @@ export const FirebaseData = {
       // Initial user profile creation
       await setDoc(userRef, cleanFirestoreData({
         ...defaultUser,
+        isAdmin: defaultUser.isAdmin,
+        role: defaultUser.role,
         updatedAt: serverTimestamp(),
       }));
 
@@ -196,8 +207,8 @@ export const FirebaseData = {
       const existing = await getDoc(userRef);
       const data = existing.data();
 
-      // Preserve existing admin status if present
-      const isAdmin = input.isAdmin ?? data?.isAdmin ?? false;
+      // Preserve existing admin status if present, with configured admin-email fallback.
+      const isAdmin = input.isAdmin ?? data?.isAdmin ?? isAdminEmail(input.email || data?.email);
 
       await setDoc(
         userRef,

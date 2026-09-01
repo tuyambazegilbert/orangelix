@@ -1,0 +1,5753 @@
+# OrangeFlix YouTube Discovery V2 — Full Implementation Specification
+
+## ROLE
+You are a senior TypeScript/React/Firebase engineer working on OrangeFlix.
+
+You are upgrading the existing OrangeFlix YouTube geo-discovery system from **Discovery V1 to Discovery V2**.
+
+The goal is not merely to modify a few scoring numbers.
+
+The goal is to build a significantly stronger, persistent, incremental, explainable YouTube discovery engine that:
+
+1. Finds substantially more relevant movies and series for configured countries.
+2. Correctly distinguishes movies, series, episodes, trailers, clips, interviews, music and unknown content.
+3. Groups scattered and inconsistently named episodes into the correct series and season.
+4. Remembers discoveries permanently so OrangeFlix does not repeatedly perform the same expensive YouTube searches for every user.
+5. Reuses previously discovered metadata and relationships.
+6. Continues discovering new content incrementally.
+7. Uses a 0–100 scoring system.
+8. Automatically publishes only content above the configured auto-publish threshold, following the existing trusted-channel policy.
+9. Keeps uncertain content in review instead of guessing.
+10. Preserves the existing trusted-channel lifecycle.
+11. Provides evidence explaining why every item received its score.
+12. Remains a FRONTEND-ONLY application. Do not introduce a traditional application backend.
+
+---
+
+# 1. CURRENT ARCHITECTURE — PRESERVE IT
+The current implementation contains:
+
+- `src/features/geo/countryConfig.ts`
+- `src/features/youtube/client.ts`
+- `src/features/youtube/discoveryWorker.ts`
+- `src/features/youtube/classifier.ts`
+- `src/services/geo-content-service.ts`
+- `src/services/auto-discovery-scheduler.ts`
+- `src/components/admin/YouTubeGeoAdminTab.tsx`
+- `src/server/youtube-discovery.ts`
+- `firestore.rules`
+The current system:
+
+1. Loads country configuration.
+2. Combines movie and series queries.
+3. Calls YouTube `search.list`.
+4. Deduplicates video IDs.
+5. Calls `videos.list`.
+6. Calls `channels.list`.
+7. Classifies videos.
+8. Applies embeddability/channel/publication rules.
+9. Stores content and trusted channels in Firestore.
+10. Uses browser memory/localStorage caching.
+DO NOT destroy working functionality unnecessarily.
+
+First inspect the existing implementation and preserve compatible public interfaces where practical.
+
+Discovery V2 should be an evolution/replacement of the discovery intelligence, not a destructive rewrite of unrelated OrangeFlix functionality.
+
+---
+
+# 2. TECHNOLOGY CONSTRAINT
+OrangeFlix must remain FRONTEND-ONLY.
+
+Use:
+
+- TypeScript
+- React
+- Firebase client SDK
+- Firestore
+- existing application architecture
+- existing YouTube API client where appropriate
+DO NOT require:
+
+- Node backend
+- Express server
+- Firebase Cloud Functions
+- Vercel serverless functions
+- external API server
+- custom application backend
+The existing Vite development gateway may remain for development, but Discovery V2 must not depend on it for normal frontend functionality.
+
+The current `VITE_YOUTUBE_API_KEY` issue is acknowledged.
+
+Because this project intentionally remains frontend-only:
+
+- use a restricted YouTube API key
+- restrict it to the required APIs
+- restrict browser origins/referrers where supported
+- never pretend a browser API key is secret
+- do not introduce server-side secrets into frontend code
+Do not move the project to a backend as part of this task.
+
+---
+
+# 3. CORE PRINCIPLE
+Discovery V1 behaves approximately like:
+
+YouTube search → videos → keyword scoring → publication.
+
+Discovery V2 must behave like:
+
+YouTube search
+→ candidate collection
+→ persistent cache lookup
+→ metadata enrichment
+→ geo analysis
+→ content analysis
+→ series/season/episode resolution
+→ duplicate resolution
+→ trusted-channel analysis
+→ evidence aggregation
+→ 0–100 confidence score
+→ publication decision
+→ persistent Firestore knowledge
+
+The system must remember what it has already learned.
+
+A user opening OrangeFlix must NOT trigger a fresh YouTube crawl.
+
+Public users should read existing Firestore discoveries.
+
+Discovery scans should be performed only by the existing admin/manual/scheduled discovery mechanism.
+
+---
+
+# 4. PERSISTENT DISCOVERY MODEL
+Firestore is the persistent source of truth.
+
+Browser memory/localStorage is only a performance cache.
+
+Do not use localStorage as the primary discovery database.
+
+Discovery V2 must store enough information to avoid repeatedly searching and classifying the same content.
+
+Add or adapt the following collections.
+
+## `geoContent/{videoId}`
+Keep the existing collection and extend it.
+
+Add fields where needed:
+
+```
+{
+  videoId: string;
+
+  title: string;
+  normalizedTitle?: string;
+
+  description?: string;
+  tags?: string[];
+
+  channelId: string;
+  channelTitle: string;
+
+  countryCode?: string;
+  countryCandidates?: CountryEvidence[];
+
+  detectedLanguages?: LanguageEvidence[];
+
+  contentType:
+    | "movie"
+    | "series"
+    | "episode"
+    | "trailer"
+    | "clip"
+    | "interview"
+    | "music"
+    | "unknown";
+
+  score: number; // 0–100
+  contentScore?: number;
+  geoScore?: number;
+  seriesScore?: number;
+  channelScore?: number;
+  qualityScore?: number;
+  duplicateScore?: number;
+  rightsScore?: number;
+
+  confidence?: number;
+
+  scoreReasons?: ScoreReason[];
+  evidence?: DiscoveryEvidence[];
+
+  seriesId?: string | null;
+  seasonId?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  episodeTitle?: string | null;
+
+  isFullMovieCandidate?: boolean;
+
+  embeddable?: boolean;
+  license?: string;
+
+  rightsVerified: boolean;
+
+  publicationStatus:
+    | "published"
+    | "pending_review"
+    | "rejected"
+    | "unavailable";
+
+  moderationStatus:
+    | "approved"
+    | "pending_review"
+    | "rejected";
+
+  channelTrust:
+    | "approved"
+    | "pending"
+    | "rejected";
+
+  classifierVersion: string;
+  discoveryVersion: string;
+
+  firstDiscoveredAt: Timestamp;
+  lastSeenAt: Timestamp;
+  lastAnalyzedAt?: Timestamp;
+
+  sourceQueries?: string[];
+
+  metadataHash?: string;
+}
+```
+Do not remove existing compatible fields.
+
+---
+
+# 5. SERIES COLLECTION
+Create a persistent series knowledge model.
+
+## `series/{seriesId}`
+Example:
+
+```
+{
+  seriesId: string;
+
+  canonicalTitle: string;
+  normalizedTitle: string;
+
+  aliases: string[];
+
+  countryCodes: string[];
+  languages: string[];
+
+  channelIds: string[];
+
+  description?: string;
+  thumbnail?: string;
+
+  status:
+    | "active"
+    | "completed"
+    | "unknown"
+    | "pending_review";
+
+  confidence: number;
+
+  seasonsCount: number;
+  episodeCount: number;
+
+  firstDiscoveredAt: Timestamp;
+  lastSeenAt: Timestamp;
+
+  searchAliases: string[];
+
+  fingerprint: SeriesFingerprint;
+
+  classificationVersion: string;
+}
+```
+The exact Firestore structure can use a flatter episode model if that fits the existing application better, but the conceptual relationship MUST exist:
+
+```
+Series
+  ↓
+Season
+  ↓
+Episode
+  ↓
+YouTube Video
+```
+
+---
+
+# 6. EPISODE MODEL
+Episodes must not be treated as unrelated videos.
+
+An episode should be able to contain:
+
+```
+{
+  episodeId: string;
+
+  seriesId: string;
+
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+
+  title: string;
+  normalizedTitle?: string;
+
+  videoIds: string[];
+
+  canonicalVideoId?: string;
+
+  confidence: number;
+
+  evidence: DiscoveryEvidence[];
+
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+```
+Multiple YouTube uploads may represent the same episode.
+
+Therefore:
+
+```
+1 episode != necessarily 1 YouTube video
+```
+The system must detect duplicate/re-upload candidates.
+
+---
+
+# 7. VIDEO INDEX
+Create a fast lookup collection if one does not already exist.
+
+## `videoIndex/{videoId}`
+Purpose:
+
+Avoid repeatedly performing expensive analysis when the same video is encountered through multiple searches.
+
+Store:
+
+```
+{
+  videoId: string;
+
+  firstSeenAt: Timestamp;
+  lastSeenAt: Timestamp;
+
+  countryCodes: string[];
+
+  channelId: string;
+
+  contentType?: string;
+
+  seriesId?: string;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+
+  classifierVersion: string;
+  metadataHash?: string;
+
+  publicationStatus?: string;
+}
+```
+Before processing a candidate:
+
+```
+Does videoIndex/{videoId} exist?
+       |
+       +-- YES → reuse metadata and only reprocess if stale/version changed
+       |
+       +-- NO  → fetch and analyze
+```
+
+---
+
+# 8. DISCOVERY CACHE
+Create persistent query caching.
+
+## `discoveryCache/{queryHash}`
+Store:
+
+```
+{
+  queryHash: string;
+
+  countryCode: string;
+
+  query: string;
+
+  queryType:
+    | "movie"
+    | "series"
+    | "episode"
+    | "ecosystem"
+    | "channel"
+    | "custom";
+
+  videoIds: string[];
+
+  executedAt: Timestamp;
+
+  expiresAt: Timestamp;
+
+  resultCount: number;
+
+  discoveryVersion: string;
+}
+```
+A query that was recently executed should NOT automatically hit YouTube again.
+
+Use configurable TTLs.
+
+Suggested defaults:
+
+```
+movieQueryTTL = 7 days;
+seriesQueryTTL = 5 days;
+episodeQueryTTL = 3 days;
+channelUploadTTL = 2 days;
+customQueryTTL = 3 days;
+```
+Make these configurable.
+
+Do not hardcode the architecture around these exact numbers.
+
+---
+
+# 9. DISCOVERY RUN HISTORY
+Create:
+
+## `discoveryRuns/{runId}`
+Store:
+
+```
+{
+  runId: string;
+
+  mode:
+    | "manual"
+    | "scheduled"
+    | "incremental";
+
+  countryCodes: string[];
+
+  startedAt: Timestamp;
+  completedAt?: Timestamp;
+
+  status:
+    | "running"
+    | "completed"
+    | "partial"
+    | "quota_exhausted"
+    | "failed";
+
+  queriesExecuted: number;
+  cacheHits: number;
+  cacheMisses: number;
+
+  candidatesFound: number;
+  newVideos: number;
+  updatedVideos: number;
+
+  moviesFound: number;
+  seriesFound: number;
+  episodesFound: number;
+
+  published: number;
+  pendingReview: number;
+  rejected: number;
+
+  quotaErrors: number;
+  metadataErrors: number;
+
+  summary?: string;
+}
+```
+This gives administrators historical visibility.
+
+---
+
+# 10. DISCOVERY LOCK
+Because there is no backend, prevent multiple admin browser tabs from running the same scan.
+
+Use Firestore transaction logic for a shared discovery lock.
+
+Example conceptual document:
+
+```
+system_meta/discovery_lock
+```
+Fields:
+
+```
+{
+  locked: boolean;
+  runId?: string;
+  lockedAt?: Timestamp;
+  lockedBy?: string;
+  expiresAt?: Timestamp;
+}
+```
+The lock must expire automatically based on timestamp.
+
+Never create a permanent lock.
+
+If a browser crashes, another authorized admin must eventually be able to acquire the lock.
+
+---
+
+# 11. VERY IMPORTANT: USER EXPERIENCE
+Normal OrangeFlix users must NOT run YouTube discovery.
+
+The public site should:
+
+```
+Firestore
+   ↓
+published geoContent
+   ↓
+public discovery UI
+```
+not:
+
+```
+User opens page
+   ↓
+YouTube API
+   ↓
+new search
+```
+This is one of the main purposes of Discovery V2.
+
+The system should continuously accumulate knowledge.
+
+If a scan discovers 500 videos today and 30 new videos next week:
+
+```
+Existing 500
++
+new 30
+=
+530 known candidates
+```
+Do not replace the old results with only the newest scan.
+
+---
+
+# 12. INCREMENTAL DISCOVERY
+Discovery V2 must be incremental.
+
+Never think:
+
+```
+scan = replace database
+```
+Think:
+
+```
+scan = discover + merge + update
+```
+For every candidate:
+
+```
+already known?
+    |
+    +-- yes → update lastSeenAt and relevant metadata
+    |
+    +-- no  → analyze and insert
+```
+Existing content should remain unless:
+
+- unavailable
+- rejected
+- explicitly removed
+- no longer embeddable
+- moderation changes it
+Do not delete old discoveries simply because a search no longer returns them.
+
+---
+
+# 13. COUNTRY DISCOVERY V2
+Keep the existing configured countries:
+
+```
+RW
+UG
+KE
+NG
+GH
+TZ
+ZA
+US
+```
+Do not remove them.
+
+Upgrade country configuration to support structured discovery intelligence.
+
+Example:
+
+```
+interface GeoDiscoveryProfile {
+  countryCode: string;
+
+  countryNames: string[];
+  demonyms: string[];
+
+  languages: LanguageProfile[];
+
+  movieTerms: string[];
+  seriesTerms: string[];
+  episodeTerms: string[];
+
+  cinemaTerms: string[];
+
+  actors?: string[];
+  directors?: string[];
+  producers?: string[];
+
+  productionCompanies?: string[];
+  studios?: string[];
+  networks?: string[];
+
+  knownChannels: string[];
+
+  positivePatterns: string[];
+  negativePatterns: string[];
+
+  queryTemplates: QueryTemplate[];
+
+  minimumMovieDuration: number;
+
+  enabled: boolean;
+}
+```
+
+---
+
+# 14. QUERY GENERATION
+Do NOT depend only on:
+
+```
+"Rwandan full movie"
+```
+Use multiple query families.
+
+Generate searches from:
+
+### Country
+
+```
+Rwanda movie
+Rwandan film
+Rwanda cinema
+```
+
+### Language
+
+```
+Kinyarwanda movie
+Kinyarwanda film
+Kinyarwanda series
+```
+
+### Content type
+
+```
+Rwanda series
+Rwandan drama series
+Kinyarwanda episode
+```
+
+### Cinema ecosystem
+
+```
+actor name + movie
+production company + movie
+studio + series
+director + film
+```
+
+### Known series
+
+```
+series title + episode
+series title + season
+series title + new episode
+```
+
+### Trusted channels
+Use channel upload scanning rather than repeatedly searching generic queries.
+
+---
+
+# 15. QUERY DEDUPLICATION
+Normalize queries before execution.
+
+For example:
+
+```
+Rwandan Full Movie
+rwandan full movie
+RWANDAN FULL MOVIE
+```
+should resolve to the same normalized query.
+
+Use a stable query hash.
+
+Never execute duplicate queries within the same discovery run.
+
+Also compare active custom queries against default queries.
+
+---
+
+# 16. QUERY PRIORITY
+Not all queries have equal value.
+
+Each query should have a priority:
+
+```
+HIGH
+MEDIUM
+LOW
+```
+Track historical performance.
+
+For example:
+
+```
+queryStats: {
+  executions: number;
+  usefulCandidates: number;
+  highConfidenceCandidates: number;
+  duplicates: number;
+  rejected: number;
+}
+```
+A query consistently producing useful content should be prioritized.
+
+A query producing mostly garbage should be deprioritized.
+
+Do not automatically delete administrator-created queries.
+
+---
+
+# 17. SEARCH RESULT BUDGET
+Respect YouTube quota.
+
+Search requests are expensive.
+
+Before starting a scan:
+
+1. Calculate how many queries will execute.
+2. Check how many are cache hits.
+3. Execute cache misses only.
+4. Stop safely when quota/rate-limit errors occur.
+5. Never continue blindly after quota exhaustion.
+Do not make dozens of unnecessary searches simply because a country has many query strings.
+
+---
+
+# 18. CHANNEL-FIRST DISCOVERY
+Trusted channels are one of OrangeFlix's most valuable discovery assets.
+
+When a channel is:
+
+```
+approved
+```
+and relevant to a country:
+
+1. Scan its uploads.
+2. Reuse cached uploads when fresh.
+3. Analyze newly discovered videos.
+4. Detect new movies.
+5. Detect new series.
+6. Detect new episodes.
+7. update channel statistics.
+8. update known series relationships.
+A trusted channel should become a persistent discovery source.
+
+---
+
+# 19. TRUSTED CHANNEL MODEL
+Preserve the current lifecycle:
+
+```
+approved
+pending
+rejected
+```
+Do not remove it.
+
+Enhance it with:
+
+```
+{
+  trustStatus;
+
+  countryCode;
+
+  trustScore: number;
+
+  discoveryPriority:
+    | "high"
+    | "normal"
+    | "low"
+    | "paused";
+
+  historicalAccuracy: number;
+
+  totalAnalyzed: number;
+  acceptedCount: number;
+  rejectedCount: number;
+
+  moviesFound: number;
+  seriesFound: number;
+  episodesFound: number;
+
+  autoPublishMovies: boolean;
+  autoPublishSeries: boolean;
+
+  lastScannedAt?: Timestamp;
+  nextRecommendedScanAt?: Timestamp;
+
+  classifierVersion: string;
+}
+```
+Existing trusted-channel fields must remain compatible.
+
+---
+
+# 20. TRUST SCORE
+Do not make channel trust binary internally.
+
+Maintain a 0–100 trust score.
+
+Example inputs:
+
+- administrator approval
+- historical accepted content
+- historical rejected content
+- country consistency
+- repeated correct classification
+- duplicate/reupload rate
+- metadata quality
+- content quality
+However:
+
+`approved` remains an administrator-controlled trust state.
+
+The numeric score should support ranking and discovery priority, not silently override administrator decisions.
+
+---
+
+# 21. CONTENT CLASSIFICATION V2
+Replace the current single heuristic score with separate dimensions.
+
+Every candidate receives:
+
+```
+geoScore: 0–100
+contentScore: 0–100
+seriesScore: 0–100
+channelScore: 0–100
+qualityScore: 0–100
+duplicateScore: 0–100
+```
+Then calculate:
+
+```
+finalScore: 0–100
+```
+All scores MUST be normalized to 0–100.
+
+Never return values above 100.
+
+Never return negative final scores.
+
+---
+
+# 22. FINAL SCORE
+Use a weighted average.
+
+Suggested starting weights:
+
+```
+geoScore       25%
+contentScore   25%
+seriesScore    15%
+channelScore   15%
+qualityScore   10%
+duplicateScore 10%
+```
+Do not let `rightsScore` imply legal verification.
+
+Rights should remain a separate safety/publication condition.
+
+The formula must be centralized and configurable.
+
+Example:
+
+```
+finalScore =
+  geoScore * 0.25 +
+  contentScore * 0.25 +
+  seriesScore * 0.15 +
+  channelScore * 0.15 +
+  qualityScore * 0.10 +
+  duplicateScore * 0.10;
+```
+Round to an integer.
+
+---
+
+# 23. AUTO-PUBLISH THRESHOLD
+OrangeFlix already auto-publishes qualifying content.
+
+Preserve that behavior but make the threshold explicit and configurable.
+
+Example:
+
+```
+AUTO_PUBLISH_SCORE = 80;
+```
+This is only an example.
+
+Read the existing project's current threshold and preserve it initially unless there is a clear reason to change it.
+
+Rules:
+
+```
+finalScore >= configured threshold
+AND
+hard rejection rules pass
+AND
+channel trust rules pass
+AND
+embeddable
+AND
+publication policy allows it
+```
+→ auto-publish.
+
+Below the threshold:
+
+```
+pending_review
+```
+unless a hard rejection applies.
+
+The threshold MUST NOT be hidden inside arbitrary classifier code.
+
+---
+
+# 24. HARD REJECTION RULES
+Some signals should not merely subtract points.
+
+Examples:
+
+```
+not embeddable
+rejected channel
+obvious trailer
+obvious teaser
+obvious music video
+obvious interview
+obvious reaction
+obvious review
+obvious clip
+```
+These should trigger explicit rejection classifications.
+
+Do not allow a huge positive score to overcome an obvious hard rejection.
+
+---
+
+# 25. MOVIE CLASSIFICATION
+A movie should not be determined by duration alone.
+
+Current V1 uses duration as a major positive signal.
+
+V2 must use multiple signals:
+
+Positive:
+
+- full movie/full film terminology
+- movie/film/cinema terminology
+- appropriate duration
+- country relevance
+- trusted channel
+- movie category
+- coherent movie description
+Negative:
+
+- trailer
+- teaser
+- clip
+- scene
+- interview
+- reaction
+- review
+- ending explained
+- episode
+- season
+- music
+- countdown
+- news
+A 70-minute episode MUST NOT become a movie simply because it is 70 minutes long.
+
+---
+
+# 26. SERIES DETECTION MUST HAPPEN BEFORE MOVIE PROMOTION
+This is mandatory.
+
+The pipeline must ask:
+
+```
+Could this video belong to a series?
+```
+before allowing it to become a movie.
+
+Example:
+
+```
+"The Promise S02E04"
+```
+must be treated as an episode even if:
+
+```
+duration = 75 minutes
+```
+Long duration does not override strong series evidence.
+
+---
+
+# 27. EPISODE PATTERN DETECTION
+Support many patterns.
+
+Examples:
+
+```
+S01E01
+S1E1
+S01 E01
+S1 E1
+S01 EP01
+S1 EP 1
+EP01
+EP 01
+EP 1
+EPISODE 1
+EPISODE ONE
+E01
+E1
+SEASON 1 EPISODE 1
+SEASON ONE EPISODE ONE
+PART 1
+PART ONE
+CHAPTER 1
+CHAPTER ONE
+NEW EPISODE
+```
+But never assume:
+
+```
+Part 1 = Episode 1
+```
+without supporting evidence.
+
+`PART` can also mean a movie split into multiple uploads.
+
+---
+
+# 28. SCATTERED NAMING SUPPORT
+The system MUST handle titles such as:
+
+```
+The Promise - Episode 1
+The Promise Ep 2
+THE PROMISE 3
+The Promise - Part 4
+The Promise New Episode
+The Promise S01E06
+The Promise Episode Seven
+```
+These should be normalized into a common series candidate:
+
+```
+THE PROMISE
+```
+while preserving the original titles.
+
+Never destroy the original title.
+
+---
+
+# 29. SERIES TITLE NORMALIZATION
+Create:
+
+```
+normalizeSeriesTitle(title: string): string
+```
+It should remove or normalize:
+
+- episode markers
+- season markers
+- episode numbers
+- "full episode"
+- "new episode"
+- "official"
+- "HD"
+- "4K"
+- common promotional suffixes
+- excessive punctuation
+But it must be conservative.
+
+Do not remove meaningful words.
+
+The normalized title is a matching aid, NOT a replacement for the real title.
+
+---
+
+# 30. SERIES MATCHING
+When a candidate looks like an episode, compare it against existing series.
+
+Use:
+
+```
+normalized title similarity
++
+description similarity
++
+channel match
++
+country match
++
+language match
++
+known aliases
++
+actor/person overlap where available
++
+production company overlap
++
+duration similarity
++
+upload sequence
++
+season evidence
+```
+Produce:
+
+```
+seriesScore: 0–100
+```
+Suggested behavior:
+
+```
+90–100:
+strong existing-series match
+
+75–89:
+probable match; review if ambiguous
+
+50–74:
+possible match
+
+0–49:
+do not automatically associate
+```
+Do not invent a series relationship solely from one weak signal.
+
+---
+
+# 31. SERIES ALIASES
+Store aliases.
+
+Example:
+
+```
+canonicalTitle:
+"The Promise"
+
+aliases:
+[
+  "The Promise",
+  "Promise",
+  "The Promise Series",
+  "The Promise Rwanda"
+]
+```
+Create a normalized alias lookup so a future video can quickly find the existing series.
+
+Do not perform a full scan of every series for every new video.
+
+Use normalized lookup first, then fuzzy matching only among a small candidate set.
+
+---
+
+# 32. SEASON RESOLUTION
+Support explicit:
+
+```
+S01
+S1
+Season 1
+Season One
+Series 1
+```
+But also infer seasons from evidence.
+
+For example:
+
+```
+Season 1:
+episodes 1–20
+
+later:
+
+The Promise 1
+The Promise 2
+```
+Do not automatically assume these are Season 2.
+
+Consider:
+
+- publication gap
+- explicit season language
+- description
+- channel playlists
+- surrounding episode numbers
+- known series history
+- upload sequence
+If confidence is insufficient:
+
+```
+seasonNumber = null
+```
+Do not guess.
+
+---
+
+# 33. EPISODE NUMBER RESOLUTION
+Episode numbers may come from:
+
+1. title
+2. description
+3. metadata
+4. playlist context
+5. surrounding known episodes
+6. season context
+7. structured pattern detection
+If unresolved:
+
+```
+episodeNumber = null;
+```
+Never fabricate an episode number.
+
+Store the evidence and allow later resolution.
+
+---
+
+# 34. NEW EPISODES
+Discovery V2 must support a series continuing after initial discovery.
+
+Example:
+
+Existing:
+
+```
+The Promise
+Season 1
+E01–E20
+```
+Later:
+
+```
+The Promise — New Episode
+```
+The system should recognize it as a candidate for the known series.
+
+It should not require the title to explicitly contain:
+
+```
+S02E01
+```
+If season/episode cannot be determined confidently, store:
+
+```
+seriesId = known series
+seasonNumber = null
+episodeNumber = null
+```
+and place it in review.
+
+Later evidence may resolve it.
+
+---
+
+# 35. MULTIPLE VIDEOS FOR ONE EPISODE
+Detect likely duplicates.
+
+Example:
+
+```
+The Promise Episode 5
+The Promise Ep 5 Full
+The Promise S01E05
+```
+These may represent one episode.
+
+Use:
+
+- series
+- season
+- episode number
+- normalized title
+- channel
+- duration
+- publication time
+- description similarity
+to calculate:
+
+```
+duplicateScore: 0–100
+```
+Do not publish duplicate versions as separate episodes when they clearly represent the same episode.
+
+Instead maintain:
+
+```
+episode
+  └── video candidates
+```
+Select the strongest canonical candidate according to configured quality rules.
+
+---
+
+# 36. COUNTRY / GEO CLASSIFICATION
+Country detection must use multiple evidence sources.
+
+Possible evidence:
+
+- channel country metadata
+- channel description
+- title
+- description
+- tags
+- language
+- country names
+- demonyms
+- known actors
+- production companies
+- trusted channel country
+- series history
+- existing series country
+- known cinema ecosystem
+Never treat a single word such as "Nigeria" as conclusive proof.
+
+---
+
+# 37. COUNTRY CONFLICT DETECTION
+Example:
+
+```
+title:
+Rwandan Movie
+
+channel country:
+Nigeria
+
+description:
+Nigerian production
+
+language:
+English
+```
+This is conflicting evidence.
+
+Do NOT simply average the evidence and publish.
+
+Mark:
+
+```
+geoConflict = true
+```
+and lower confidence / send to review.
+
+Strong contradictions should prevent automatic publication.
+
+---
+
+# 38. LANGUAGE DETECTION
+Store:
+
+```
+detectedLanguages: [
+  {
+    code: string;
+    confidence: number;
+    evidence: string[];
+  }
+]
+```
+Support multilingual content.
+
+Language is evidence, not absolute proof of country.
+
+For example:
+
+```
+Kinyarwanda + English
+Swahili + English
+Yoruba + English
+Zulu + English
+```
+should be valid combinations.
+
+---
+
+# 39. EVIDENCE SYSTEM
+Every important decision must have evidence.
+
+Example:
+
+```
+{
+  type: "title_pattern",
+  field: "title",
+  value: "S02E04",
+  impact: +25,
+  explanation: "Strong episode marker detected"
+}
+```
+Other evidence types:
+
+```
+channel_country
+trusted_channel
+title_pattern
+description_pattern
+language
+duration
+category
+series_alias
+series_title_similarity
+episode_pattern
+season_pattern
+upload_sequence
+country_keyword
+production_company
+known_person
+duplicate_match
+hard_negative
+```
+This allows the admin to understand:
+
+> Why did OrangeFlix give this video 91/100?
+
+---
+
+# 40. SCORE DISPLAY
+Admin UI should show:
+
+```
+Final Score: 91/100
+
+Geo:       94
+Content:   96
+Series:    92
+Channel:   100
+Quality:   82
+Duplicate: 100
+```
+Then:
+
+```
+WHY
+
++25 Strong Rwanda country evidence
++20 Trusted Rwanda channel
++22 Strong episode pattern
++18 Existing series match
++10 Duration consistent with series
+-04 Weak description
+```
+The exact UI can fit the existing admin design.
+
+---
+
+# 41. DO NOT CALL CONFIDENCE A PROBABILITY
+A score of:
+
+```
+92/100
+```
+means:
+
+> strong internal discovery confidence.
+It does NOT mean:
+
+> 92% legally verified.
+It does NOT mean:
+
+> 92% certain the uploader owns rights.
+Keep:
+
+```
+rightsVerified: false
+```
+unless an administrator explicitly verifies rights.
+
+---
+
+# 42. RIGHTS ARE SEPARATE
+YouTube metadata cannot prove distribution rights.
+
+Do not change:
+
+```
+rightsVerified
+```
+to true automatically.
+
+Keep rights verification as a separate moderation workflow.
+
+---
+
+# 43. PUBLICATION ENGINE
+Implement a dedicated function:
+
+```
+decidePublication(candidate): PublicationDecision
+```
+It must be deterministic and testable.
+
+Possible result:
+
+```
+{
+  status: "published",
+  reason: "score_threshold_and_trusted_channel"
+}
+```
+or:
+
+```
+{
+  status: "pending_review",
+  reason: "score_below_auto_publish_threshold"
+}
+```
+or:
+
+```
+{
+  status: "rejected",
+  reason: "hard_negative_content"
+}
+```
+
+---
+
+# 44. AUTO-PUBLISH POLICY
+Preserve existing trusted-channel behavior.
+
+Approved channel + qualifying content:
+
+```
+high score
++
+embeddable
++
+not hard-rejected
++
+auto-publish enabled
+=
+published
+```
+For non-approved channels:
+
+```
+very high score
++
+strong geo evidence
++
+strong content evidence
++
+no contradictions
++
+full movie/series rules
+```
+may qualify according to the existing policy.
+
+Do not weaken existing safety rules just to increase content volume.
+
+---
+
+# 45. CACHING STRATEGY
+Implement three levels.
+
+## Level 1 — Browser memory
+Fastest.
+
+Use for the current session.
+
+## Level 2 — localStorage
+Use for UI convenience only.
+
+Store:
+
+- recent discovery summaries
+- recently viewed content
+- query configuration cache
+Do not use it as the authoritative discovery database.
+
+## Level 3 — Firestore
+Persistent source of truth.
+
+Store:
+
+- videos
+- series
+- episodes
+- channels
+- query cache
+- run history
+- classification versions
+- evidence
+- discovery relationships
+
+---
+
+# 46. CACHE-FIRST ALGORITHM
+Before calling YouTube:
+
+```
+normalize query
+       ↓
+calculate queryHash
+       ↓
+lookup discoveryCache
+       ↓
+fresh?
+ ┌─────┴─────┐
+ YES         NO
+ │            │
+reuse         YouTube
+results       search
+ │            │
+ └─────┬──────┘
+       ↓
+merge into persistent knowledge
+```
+The same principle applies to video and channel metadata.
+
+---
+
+# 47. METADATA STALENESS
+Do not fetch video/channel metadata every time.
+
+Store:
+
+```
+lastAnalyzedAt
+```
+and use configurable freshness.
+
+Example:
+
+```
+recently analyzed:
+reuse
+
+stale:
+refresh
+
+missing:
+fetch
+```
+Do not repeatedly call YouTube for unchanged data.
+
+---
+
+# 48. INCREMENTAL CHANNEL SCANNING
+For trusted channels:
+
+```
+lastScannedAt
+```
+should determine what needs scanning.
+
+If the channel was scanned yesterday:
+
+```
+do not fully rescan unnecessarily
+```
+If the scan is due:
+
+```
+scan uploads
+find new video IDs
+analyze only new/changed videos
+```
+The exact incremental strategy must work with YouTube's available playlist/search behavior.
+
+---
+
+# 49. DISCOVERY SHOULD LEARN FROM ITS OWN DATABASE
+If a known series exists:
+
+```
+The Promise
+```
+automatically use it as a discovery seed.
+
+If a known trusted channel exists:
+
+```
+Channel X
+```
+use it as a discovery source.
+
+If a production company repeatedly produces accepted content:
+
+```
+Company X
+```
+use it as a future query seed.
+
+The database should become a knowledge base.
+
+---
+
+# 50. DISCOVERY KNOWLEDGE GRAPH
+Conceptually maintain:
+
+```
+Country
+  ↓
+Channel
+  ↓
+Production Company
+  ↓
+Series
+  ↓
+Season
+  ↓
+Episode
+  ↓
+YouTube Video
+```
+Also:
+
+```
+Actor
+  ↓
+Movie
+  ↓
+Channel
+  ↓
+Country
+```
+This makes future discovery stronger without requiring massive generic search.
+
+---
+
+# 51. DISCOVERY FEEDBACK
+Store administrator corrections.
+
+Example:
+
+## `discoveryFeedback/{feedbackId}`
+
+```
+{
+  videoId: string;
+
+  previousContentType?: string;
+  correctedContentType?: string;
+
+  previousCountry?: string;
+  correctedCountry?: string;
+
+  previousSeriesId?: string;
+  correctedSeriesId?: string;
+
+  previousSeasonNumber?: number | null;
+  correctedSeasonNumber?: number | null;
+
+  previousEpisodeNumber?: number | null;
+  correctedEpisodeNumber?: number | null;
+
+  reason?: string;
+
+  createdAt: Timestamp;
+
+  adminUid: string;
+}
+```
+Do not automatically modify algorithm weights from one correction.
+
+Use this data for future rule improvements and testing.
+
+---
+
+# 52. CLASSIFIER VERSIONING
+Define:
+
+```
+DISCOVERY_VERSION = "2.0.0";
+CLASSIFIER_VERSION = "2.0.0";
+```
+Store versions with every analyzed record.
+
+When V2 improves:
+
+```
+2.0.0 → 2.1.0
+```
+the system can find stale records and re-evaluate them without having to call YouTube again.
+
+This is essential.
+
+---
+
+# 53. REPROCESS OLD CONTENT
+If:
+
+```
+record.classifierVersion !== CURRENT_CLASSIFIER_VERSION
+```
+the system may reprocess existing metadata.
+
+Do NOT automatically re-search YouTube.
+
+Use already stored metadata first.
+
+This saves quota.
+
+---
+
+# 54. FAST LOOKUPS
+Design Firestore access around direct IDs and indexed fields.
+
+Common operations:
+
+```
+videoId → geoContent
+videoId → videoIndex
+seriesId → series
+seriesId → episodes
+channelId → trustedChannels
+normalizedAlias → series
+countryCode + status → published content
+countryCode + contentType → content
+```
+Add Firestore composite indexes where needed.
+
+Do not load the entire `geoContent` collection into the browser.
+
+---
+
+# 55. PUBLIC DISCOVERY
+The public discovery page should query Firestore only.
+
+Example:
+
+```
+countryCode == RW
+status == published
+```
+then paginate.
+
+Use:
+
+```
+limit
+startAfter
+```
+and appropriate indexes.
+
+Do not query YouTube from public discovery pages.
+
+---
+
+# 56. ADMIN DISCOVERY
+The admin dashboard can show:
+
+```
+Last discovery run
+New videos
+Updated videos
+New movies
+New series
+New episodes
+Published
+Pending
+Rejected
+Cache hits
+YouTube searches
+Quota errors
+```
+Allow:
+
+```
+Scan country
+Scan trusted channels
+Scan known series
+Run incremental discovery
+```
+
+---
+
+# 57. MANUAL SCAN MODES
+Implement:
+
+```
+country scan
+channel scan
+series expansion
+incremental scan
+```
+Examples:
+
+### Country scan
+Find new movies/series in Rwanda.
+
+### Channel scan
+Explore uploads from a trusted channel.
+
+### Series expansion
+Find missing/new episodes for a known series.
+
+### Incremental scan
+Only execute due queries and due channel/series scans.
+
+---
+
+# 58. SCHEDULER
+Because this is frontend-only:
+
+Do not claim browser scheduling is a guaranteed global cron.
+
+Keep the existing scheduler for admin/browser environments.
+
+Make it cache-aware and lock-aware.
+
+A scheduled browser scan should:
+
+1. acquire Firestore lock
+2. determine due countries/queries
+3. skip fresh cache
+4. scan only necessary sources
+5. merge results
+6. release lock
+7. save run history
+If no browser is open, the scheduled scan cannot run.
+
+Do not hide this limitation.
+
+---
+
+# 59. YOUTUBE API EFFICIENCY
+Use:
+
+```
+search.list
+videos.list
+channels.list
+playlistItems.list
+```
+efficiently.
+
+Batch:
+
+```
+videos.list ≤ 50 IDs
+channels.list ≤ 50 IDs
+```
+Deduplicate IDs before detail requests.
+
+Never request metadata for the same video twice during a single run.
+
+---
+
+# 60. SEARCH RESULT DEDUPLICATION
+A video can appear in:
+
+```
+movie query
+series query
+country query
+language query
+actor query
+channel discovery
+```
+It must still be analyzed once.
+
+Maintain an in-memory Set during each run:
+
+```
+Set<string>
+```
+and persistent `videoIndex`.
+
+---
+
+# 61. RETRY / RATE LIMITING
+Because there is no backend queue, keep retry logic conservative.
+
+For temporary failures:
+
+```
+short delay
+→ retry
+→ longer delay
+→ retry
+→ stop
+```
+Do not create aggressive retry loops.
+
+For:
+
+```
+quotaExceeded
+rateLimitExceeded
+```
+stop the appropriate scope.
+
+Do not continue burning quota.
+
+---
+
+# 62. QUERY RESULT CACHE MERGING
+If a cached query returns old IDs:
+
+```
+old IDs
++
+new IDs
+```
+merge them.
+
+Do not treat the cache as a permanent snapshot.
+
+The cache exists to avoid frequent identical calls.
+
+The persistent video database exists to preserve all known discoveries.
+
+---
+
+# 63. STALE CACHE POLICY
+A stale cache means:
+
+> eligible for refresh.
+It does NOT mean:
+
+> delete the previous result.
+When refreshing:
+
+```
+old results remain known
+new results are added
+```
+
+---
+
+# 64. NO USER-BASED DISCOVERY
+Do not make discovery dependent on each user's browser.
+
+Bad:
+
+```
+User A → YouTube
+User B → YouTube
+User C → YouTube
+```
+Good:
+
+```
+Admin discovery
+       ↓
+Firestore knowledge
+       ↓
+User A ─┐
+User B ─┼→ Firestore
+User C ─┘
+```
+This is a critical requirement.
+
+---
+
+# 65. SERIES UI DATA
+The backend-independent frontend should be able to retrieve:
+
+```
+Series
+  ↓
+Seasons
+  ↓
+Episodes
+  ↓
+Canonical YouTube video
+```
+Example:
+
+```
+The Promise
+
+Season 1
+  Episode 1
+  Episode 2
+  Episode 3
+
+Season 2
+  Episode 1
+  Episode 2
+  Episode 3
+```
+Do not display every episode as a separate movie.
+
+---
+
+# 66. MISSING EPISODES
+If:
+
+```
+E01
+E02
+E04
+E05
+```
+are known, the system may display:
+
+```
+E03 — not discovered
+```
+but only if the series context strongly indicates that E03 should exist.
+
+Do not fabricate an episode record.
+
+Use a UI concept such as:
+
+```
+missing/unconfirmed
+```
+rather than fake content.
+
+---
+
+# 67. UNKNOWN CONTENT
+Unknown content should not be thrown away immediately.
+
+If:
+
+```
+score >= low discovery threshold
+```
+store it as:
+
+```
+pending_review
+```
+with evidence.
+
+This allows future classifier improvements to reprocess it.
+
+---
+
+# 68. DO NOT LOSE LOW-SCORE DISCOVERIES
+A low-score candidate can become useful later.
+
+Store it when appropriate.
+
+Differentiate:
+
+```
+rejected permanently
+```
+from:
+
+```
+not currently publishable
+```
+The latter should remain available for future reclassification.
+
+---
+
+# 69. HARD REJECT VS SOFT REJECT
+Use:
+
+```
+decisionType:
+  | "publish"
+  | "review"
+  | "reject_hard"
+  | "reject_soft";
+```
+Hard reject:
+
+```
+obvious trailer
+rejected channel
+not embeddable
+```
+Soft reject:
+
+```
+weak score
+insufficient geo evidence
+uncertain classification
+```
+Soft rejects may be reprocessed later.
+
+---
+
+# 70. LLM / AI USE
+Do not make an LLM mandatory for every YouTube result.
+
+The deterministic engine should handle obvious cases.
+
+AI may be used only for ambiguous cases.
+
+Use this order:
+
+```
+metadata
+→ deterministic rules
+→ known database lookup
+→ fuzzy relationship matching
+→ AI reasoning only when needed
+```
+This reduces cost and latency.
+
+---
+
+# 71. AI PROMPT
+When AI reasoning is used, send structured metadata and request strict JSON.
+
+Use a prompt similar to:
+
+"You are OrangeFlix's metadata reasoning engine.
+
+Analyze the supplied YouTube metadata.
+
+You must not invent facts.
+
+Separate observed evidence from inference.
+
+Determine:
+
+1. likely country/countries
+2. language/languages
+3. content type
+4. whether it is likely a movie
+5. whether it is likely a series
+6. whether it is likely an episode
+7. likely series title
+8. likely season number
+9. likely episode number
+10. contradictions
+11. evidence
+12. confidence from 0–100
+Rules:
+
+- A long duration does not prove that something is a movie.
+- An episode can be longer than 60 minutes.
+- Do not infer a season or episode number without evidence.
+- "Part 1" does not automatically mean Episode 1.
+- Country and language are separate concepts.
+- YouTube metadata does not prove copyright ownership.
+- Do not treat rights as verified.
+- If information is unknown, return null.
+- Never fabricate missing metadata.
+- Prefer existing OrangeFlix series knowledge when provided.
+- If the candidate probably belongs to an existing series, explain why.
+- If evidence conflicts, explicitly report the conflict.
+- Return JSON only."
+The application must validate the returned JSON before using it.
+
+Do not blindly trust AI output.
+
+---
+
+# 72. AI OUTPUT SCHEMA
+Use a strict structure:
+
+```
+{
+  "countryCandidates": [
+    {
+      "countryCode": "RW",
+      "confidence": 0
+    }
+  ],
+
+  "languages": [
+    {
+      "code": "rw",
+      "confidence": 0
+    }
+  ],
+
+  "contentType": "movie",
+
+  "contentConfidence": 0,
+
+  "series": {
+    "isSeriesRelated": false,
+    "title": null,
+    "confidence": 0
+  },
+
+  "season": {
+    "number": null,
+    "confidence": 0
+  },
+
+  "episode": {
+    "number": null,
+    "confidence": 0
+  },
+
+  "contradictions": [],
+
+  "evidence": []
+}
+```
+Validate all numeric values.
+
+Clamp to:
+
+```
+0–100
+```
+
+---
+
+# 73. SCORE CALIBRATION
+Do not arbitrarily inflate scores.
+
+The system must use an understandable scoring model.
+
+Create a central scoring module:
+
+```
+src/features/youtube/discoveryV2/scoring.ts
+```
+Do not scatter score arithmetic throughout the classifier.
+
+Suggested modules:
+
+```
+discoveryEngine.ts
+queryGenerator.ts
+candidateCollector.ts
+metadataCache.ts
+geoAnalyzer.ts
+contentClassifier.ts
+seriesResolver.ts
+seasonResolver.ts
+episodeResolver.ts
+duplicateResolver.ts
+trustEngine.ts
+scoring.ts
+publicationEngine.ts
+discoveryCache.ts
+knowledgeStore.ts
+```
+Adapt names to the existing repository.
+
+---
+
+# 74. RECOMMENDED PROJECT STRUCTURE
+Prefer something close to:
+
+```
+src/features/youtube/discoveryV2/
+    discoveryEngine.ts
+    queryGenerator.ts
+    candidateCollector.ts
+    metadataEnricher.ts
+    geoAnalyzer.ts
+    contentClassifier.ts
+    seriesResolver.ts
+    seasonResolver.ts
+    episodeResolver.ts
+    duplicateResolver.ts
+    channelAnalyzer.ts
+    scoring.ts
+    publicationEngine.ts
+    cacheManager.ts
+    knowledgeStore.ts
+    evidence.ts
+    types.ts
+    constants.ts
+    utils.ts
+```
+Do not create duplicate competing implementations unnecessarily.
+
+If V1 can be safely retired after V2 is verified, remove dead code.
+
+---
+
+# 75. TESTING
+Add unit tests for:
+
+### Movie detection
+
+- full movie
+- full film
+- 70-minute movie
+- 70-minute episode
+- trailer
+- clip
+- interview
+- review
+- music video
+
+### Series detection
+
+- S01E01
+- S1 E1
+- Episode 1
+- Ep 1
+- E01
+- Episode One
+- New Episode
+- scattered naming
+- no explicit episode marker
+
+### Season detection
+
+- S01
+- Season 1
+- Season One
+- missing season
+- numbering restart
+
+### Series matching
+
+- exact title
+- normalized title
+- aliases
+- same channel
+- different channel
+- conflicting country
+- similar but unrelated title
+
+### Duplicate detection
+
+- same video
+- same episode with different upload
+- same title but different episode
+- same series but different episodes
+
+### Publication
+
+- approved channel
+- pending channel
+- rejected channel
+- threshold exactly met
+- threshold below
+- hard rejection
+- geo conflict
+- not embeddable
+
+---
+
+# 76. TEST SCORE BOUNDARIES
+Explicitly test:
+
+```
+0
+1
+49
+50
+59
+60
+69
+70
+79
+80
+81
+89
+90
+99
+100
+```
+No final score may be:
+
+```
+< 0
+> 100
+```
+
+---
+
+# 77. PERFORMANCE REQUIREMENTS
+The system should optimize for:
+
+1. Firestore knowledge reuse.
+2. Query cache reuse.
+3. Video metadata reuse.
+4. Channel metadata reuse.
+5. Existing series matching.
+6. Batch YouTube requests.
+7. No duplicate processing.
+8. No public-user YouTube scanning.
+A second scan of the same country shortly after the first should result in a high cache-hit rate.
+
+---
+
+# 78. DISCOVERY METRICS
+Track:
+
+```
+cacheHitRate
+newVideoRate
+duplicateRate
+movieRate
+seriesRate
+episodeRate
+pendingRate
+autoPublishRate
+rejectionRate
+geoConflictRate
+classificationErrorRate
+quotaErrorRate
+```
+Admin should be able to see these metrics.
+
+---
+
+# 79. HEALTH CHECK
+A successful discovery run should report:
+
+```
+Searches executed
+Cache hits
+Candidates found
+New videos
+Existing videos updated
+Movies
+Series
+Episodes
+Pending
+Published
+Rejected
+Quota errors
+Metadata errors
+```
+A scan returning zero candidates should not automatically mean:
+
+> There is no content.
+It may mean:
+
+- cache
+- quota
+- search failure
+- weak query
+- API failure
+Make the run status explain the reason.
+
+---
+
+# 80. QUERY QUALITY LEARNING
+Track query performance.
+
+Example:
+
+```
+"Kinyarwanda full movie"
+
+executions: 20
+candidates: 410
+useful: 180
+published: 75
+rejected: 120
+```
+Compare with:
+
+```
+"Rwanda cinema"
+
+executions: 20
+candidates: 500
+useful: 30
+published: 5
+```
+The first query should receive higher future priority.
+
+Do not automatically remove queries solely from this statistic.
+
+---
+
+# 81. CHANNEL QUALITY LEARNING
+Likewise track channel performance.
+
+Example:
+
+```
+Channel A
+
+Analyzed: 200
+Published: 150
+Review: 30
+Rejected: 20
+Accuracy: high
+```
+This channel becomes a high-value discovery source.
+
+---
+
+# 82. SERIES QUALITY LEARNING
+Track series confidence.
+
+Once a series has many confirmed episodes:
+
+```
+The Promise
+episodes confirmed: 40
+channel consistency: high
+country consistency: high
+```
+future episodes should be easier to identify.
+
+But do not allow historical trust to override contradictory evidence.
+
+---
+
+# 83. DON'T OVERFIT TO CURRENT DATA
+Build the engine generically.
+
+Do not hardcode:
+
+```
+The Promise
+specific actor
+specific channel
+```
+into the classifier.
+
+Those belong in Firestore/configuration knowledge.
+
+---
+
+# 84. COUNTRY-SPECIFIC INTELLIGENCE
+Country-specific terminology should live in country configuration, not inside generic classifier logic.
+
+Example:
+
+```
+countryConfig["RW"].movieTerms
+countryConfig["RW"].seriesTerms
+countryConfig["RW"].languages
+```
+The generic classifier consumes the profile.
+
+This allows adding another country without rewriting the engine.
+
+---
+
+# 85. SEARCH EXPANSION FROM DISCOVERED CONTENT
+When a new high-confidence series is found:
+
+```
+Series discovered
+      ↓
+Generate series-specific searches
+      ↓
+Search for missing/new episodes
+```
+When a new trusted channel is approved:
+
+```
+Channel approved
+      ↓
+Scan uploads
+      ↓
+Discover content
+```
+When a new production company is identified:
+
+```
+Production company
+      ↓
+future query seed
+```
+This is the main mechanism by which V2 becomes stronger over time.
+
+---
+
+# 86. FUTURE REFERENCE / MEMORY
+Every useful discovery should remain queryable.
+
+Never throw away:
+
+- aliases
+- series relationships
+- episode relationships
+- channel relationships
+- query performance
+- evidence
+- corrections
+- classification versions
+- timestamps
+This is the OrangeFlix discovery knowledge base.
+
+---
+
+# 87. MIGRATION FROM V1
+Do not delete V1 data.
+
+Migrate existing:
+
+```
+geoContent
+trustedChannels
+customQueries
+```
+into V2-compatible fields.
+
+Existing content should receive:
+
+```
+discoveryVersion: "1.x"
+```
+and be eligible for V2 re-analysis.
+
+Do not re-query YouTube unnecessarily.
+
+Use stored metadata first.
+
+---
+
+# 88. BACKWARD COMPATIBILITY
+Existing public pages must continue to work during migration.
+
+If old records do not have new fields:
+
+```
+use safe defaults
+```
+Do not crash.
+
+The migration can gradually populate:
+
+```
+score
+geoScore
+contentScore
+seriesScore
+channelScore
+qualityScore
+duplicateScore
+evidence
+seriesId
+classifierVersion
+```
+
+---
+
+# 89. FIRESTORE SECURITY
+Preserve the existing security principle:
+
+Public users:
+
+```
+read published content
+```
+Admins:
+
+```
+read/write discovery management data
+```
+Discovery writes must remain protected by Firestore rules.
+
+Do not weaken Firestore security merely to make discovery easier.
+
+Test rules with the Firebase emulator.
+
+---
+
+# 90. IMPORTANT FRONTEND SECURITY NOTE
+The project remains frontend-only.
+
+Therefore:
+
+```
+VITE_YOUTUBE_API_KEY
+```
+must be treated as publicly recoverable.
+
+Do not put private credentials into frontend code.
+
+Use a restricted browser API key and document the required restrictions.
+
+Do not claim frontend-only architecture can make the YouTube API key secret.
+
+---
+
+# 91. ADMIN CONTROLS
+Extend the existing YouTube Geo Admin tab.
+
+Add:
+
+```
+Discovery V2 status
+Current version
+Last scan
+Next eligible scan
+Cache hit rate
+New content
+Series discovered
+Episodes discovered
+Quota status
+```
+Allow:
+
+```
+Run incremental discovery
+Scan country
+Scan trusted channel
+Expand series
+Clear selected query cache
+Reprocess stale classifications
+```
+Do not give ordinary users these controls.
+
+---
+
+# 92. ADMIN EXPLANATION VIEW
+When an admin opens a candidate, show:
+
+```
+Title
+Channel
+Country
+Content Type
+Final Score
+
+Geo Score
+Content Score
+Series Score
+Channel Score
+Quality Score
+Duplicate Score
+
+Series
+Season
+Episode
+
+Evidence
+
+Contradictions
+
+Publication decision
+```
+This makes the system auditable.
+
+---
+
+# 93. IMPORTANT: DO NOT MAKE SCORE THE ONLY TRUST SIGNAL
+A score is a ranking/decision mechanism.
+
+The system must still respect:
+
+```
+hard rejection
+channel rejection
+embeddability
+moderation
+rights verification
+geo conflict
+```
+A 99/100 score must not override a hard rejection.
+
+---
+
+# 94. FINAL DISCOVERY PIPELINE
+Implement this final flow:
+
+```
+START
+  ↓
+Acquire discovery lock
+  ↓
+Load country profile
+  ↓
+Load trusted channels
+  ↓
+Load known series
+  ↓
+Generate prioritized queries
+  ↓
+Check persistent query cache
+  ↓
+Execute only due/missing searches
+  ↓
+Collect video IDs
+  ↓
+Deduplicate
+  ↓
+Check videoIndex
+  ↓
+Fetch only missing/stale metadata
+  ↓
+Fetch channel metadata only when needed
+  ↓
+Analyze country
+  ↓
+Analyze language
+  ↓
+Analyze content type
+  ↓
+Check series relationship
+  ↓
+Resolve season
+  ↓
+Resolve episode
+  ↓
+Check duplicate/reupload
+  ↓
+Calculate individual scores
+  ↓
+Calculate final 0–100 score
+  ↓
+Check hard rejection rules
+  ↓
+Apply trusted-channel policy
+  ↓
+Apply configurable auto-publish threshold
+  ↓
+Publish / Review / Reject
+  ↓
+Persist video
+  ↓
+Persist series
+  ↓
+Persist episode
+  ↓
+Persist evidence
+  ↓
+Update channel intelligence
+  ↓
+Update query statistics
+  ↓
+Update cache
+  ↓
+Write discovery run summary
+  ↓
+Release lock
+  ↓
+END
+```
+
+---
+
+# 95. SUCCESS CRITERIA
+Discovery V2 is successful only if all of the following are true:
+
+### Discovery
+It finds more relevant country-specific movies and series than V1.
+
+### Classification
+It significantly reduces:
+
+```
+movie mistaken for episode
+episode mistaken for movie
+series episodes treated as independent movies
+trailers published as movies
+clips published as movies
+interviews published as movies
+```
+
+### Series
+It can group inconsistently named episodes.
+
+### Persistence
+A discovery made once remains available for future users.
+
+### Incremental updates
+New scans add new content instead of replacing the existing knowledge.
+
+### Caching
+Repeated queries are served from persistent cache when fresh.
+
+### Efficiency
+The system avoids unnecessary YouTube API requests.
+
+### Trust
+Every publication has an explainable score and evidence.
+
+### Administration
+Admins can understand and correct decisions.
+
+### Safety
+Rights are not falsely represented as verified.
+
+---
+
+# 96. DO NOT DO THESE THINGS
+Do NOT:
+
+- rewrite the whole application unnecessarily
+- introduce a traditional backend
+- make every user call YouTube
+- call YouTube for the same query repeatedly
+- classify solely from title keywords
+- classify long videos as movies automatically
+- require S01E01 formatting
+- assume Part 1 means Episode 1
+- invent episode numbers
+- invent seasons
+- overwrite old discoveries with new scans
+- delete old discoveries because a search no longer returns them
+- treat language as absolute country proof
+- treat YouTube metadata as rights verification
+- let a score override hard rejection
+- trust an LLM without schema validation
+- store only the final score without evidence
+- scatter scoring formulas across multiple files
+- create a second unrelated trusted-channel system
+- expose private secrets in frontend code
+- load all Firestore content into the browser at once
+
+---
+
+# 97. IMPLEMENTATION ORDER
+Implement in this order:
+
+## Phase 1
+Inspect existing V1 code and types.
+
+Create V2 types and constants.
+
+Do not modify public UI yet.
+
+## Phase 2
+Implement persistent cache.
+
+Implement `videoIndex`.
+
+Implement discovery run history.
+
+Implement discovery locking.
+
+## Phase 3
+Implement improved query generation.
+
+Implement query prioritization and deduplication.
+
+## Phase 4
+Implement new 0–100 scoring engine.
+
+## Phase 5
+Implement improved geo detection.
+
+## Phase 6
+Implement movie/series/episode classification.
+
+## Phase 7
+Implement Series Resolver.
+
+## Phase 8
+Implement Season Resolver.
+
+## Phase 9
+Implement Episode Resolver.
+
+## Phase 10
+Implement duplicate/reupload resolution.
+
+## Phase 11
+Integrate trusted-channel intelligence.
+
+## Phase 12
+Implement publication engine.
+
+## Phase 13
+Migrate/reprocess existing data.
+
+## Phase 14
+Update admin UI.
+
+## Phase 15
+Add tests.
+
+## Phase 16
+Run a controlled single-country discovery test.
+
+Only after the single-country test is successful should multi-country discovery be enabled.
+
+---
+
+# 98. FIRST TEST
+Do not immediately run all countries.
+
+Start with:
+
+```
+RW
+```
+Run:
+
+```
+incremental discovery
+```
+Measure:
+
+```
+queries
+cache hits
+videos found
+new videos
+movies
+series
+episodes
+published
+pending
+rejected
+duplicates
+geo conflicts
+```
+Then inspect the actual results.
+
+Fix classification problems before expanding to:
+
+```
+UG
+KE
+NG
+GH
+TZ
+ZA
+US
+```
+
+---
+
+# 99. FINAL REQUIREMENT
+The implementation must be stronger than V1 in two different ways:
+
+## Recall
+Find more legitimate relevant movies and series.
+
+## Precision
+Reduce incorrect classification and publication.
+
+Do NOT improve recall by simply lowering all thresholds.
+
+Do NOT improve precision by making discovery so restrictive that legitimate content disappears.
+
+The goal is:
+
+```
+BROADER DISCOVERY
++
+BETTER EVIDENCE
++
+BETTER CLASSIFICATION
++
+BETTER SERIES RELATIONSHIPS
++
+PERSISTENT MEMORY
++
+INCREMENTAL DISCOVERY
++
+CONSERVATIVE PUBLICATION
+```
+That is OrangeFlix Discovery V2.
+
+Before writing production code, inspect the existing files and identify which V1 functions can be reused, which must be replaced, and which Firestore fields must be migrated.
+
+Do not fabricate existing code.
+
+Do not remove working functionality without explaining why.
+
+At the end, provide:
+
+1. files changed
+2. files added
+3. Firestore schema changes
+4. Firestore indexes required
+5. migration steps
+6. security-rule changes
+7. environment-variable changes
+8. tests added
+9. known limitations
+10. manual test procedure
+11. exact current auto-publish threshold
+12. exact V2 scoring formula
+13. cache TTLs
+14. discovery-lock behavior
+15. example of one movie flowing through V2
+16. example of one scattered series flowing through V2
+17. example of a new episode being added to an existing series
+18. example of a duplicate episode being detected
+19. example of a country-conflict candidate being sent to review
+
+# OrangeFlix YouTube Geo Discovery V2 — Scoring, Trust & Publication Specification
+Implement the following additions and changes as part of **OrangeFlix YouTube Geo Discovery V2**.
+
+The goal is to make Discovery V2 substantially stronger than V1 at identifying:
+
+- Correct country/territory
+- Movies
+- Series
+- Seasons
+- Episodes
+- Scattered/inconsistent episode naming
+- Full movies vs trailers/clips/interviews/music/reviews
+- Trusted channels
+- Duplicate content
+- Previously discovered content
+- New content discovered during future scans
+Do **not** introduce a traditional backend as a requirement. Continue using the existing Firebase/Firestore architecture and client-side discovery where currently supported. Firestore must remain the **global persistent discovery memory**, while browser memory/localStorage must remain only a performance cache.
+
+---
+
+## 1. PRIMARY PUBLICATION RULE — OVERALL SCORE
+Discovery V2 must introduce a normalized **Overall Score from 0–100**.
+
+This score is the highest-priority publication decision.
+
+### Mandatory thresholds
+
+```
+0–34
+    → AUTO REJECT
+
+35–75
+    → PENDING REVIEW
+
+76–100
+    → AUTO PUBLISH
+```
+Implement the exact logic:
+
+```
+if (overallScore < 35) {
+    status = "rejected";
+} else if (overallScore <= 75) {
+    status = "pending_review";
+} else {
+    status = "published";
+}
+```
+Do not use the old V1 score thresholds as the primary publication system.
+
+The new V2 `overallScore` must always be normalized to:
+
+```
+0 <= overallScore <= 100
+```
+Never allow a score below 0 or above 100.
+
+---
+
+# 2. HARD SAFETY GATES
+The Overall Score is the primary decision system, but certain conditions must override it.
+
+A video must NEVER be automatically published simply because it has a high score if it violates a hard gate.
+
+Examples of hard rejection conditions:
+
+- Video is not embeddable when embedding is required.
+- Channel is explicitly rejected.
+- Video is clearly unrelated to the configured country.
+- Video is clearly a trailer when evaluated as a movie.
+- Video is clearly a teaser.
+- Video is clearly a clip/scene/highlight when evaluated as a full movie.
+- Video is clearly an interview.
+- Video is clearly music content when evaluated as cinema.
+- Video is clearly a review/reaction/ending explanation.
+- Video is clearly news content unrelated to the intended cinema discovery.
+- Video is clearly spam or irrelevant content.
+- Video is a duplicate of an already rejected canonical item where appropriate.
+- A known hard-exclusion pattern identifies the content as non-cinema.
+Hard gates must be evaluated before automatic publication.
+
+Therefore:
+
+```
+HIGH SCORE + HARD FAILURE
+    → REJECT
+
+HIGH SCORE + NO HARD FAILURE
+    → continue to publication threshold
+```
+Do not allow the score system to override explicit rejection rules.
+
+---
+
+# 3. V2 SCORE COMPONENTS
+Do not rely on one raw additive score.
+
+Calculate separate evidence scores and then produce the final Overall Score.
+
+Recommended normalized components:
+
+```
+countryScore
+contentTypeScore
+movieScore
+seriesScore
+episodeScore
+seasonScore
+channelScore
+qualityScore
+metadataScore
+freshnessScore
+duplicateScore
+```
+All component scores must be normalized to 0–100.
+
+The final Overall Score must be calculated from these signals.
+
+The exact weighting should be configurable rather than scattered throughout the code.
+
+Create a centralized scoring configuration such as:
+
+```
+DISCOVERY_V2_SCORING_CONFIG
+```
+so thresholds and weights can be changed without rewriting the classifier.
+
+---
+
+# 4. COUNTRY SCORE
+Country matching must become much stronger than V1.
+
+Do not assume that a YouTube search query containing a country name means that the video belongs to that country.
+
+Evaluate multiple independent signals.
+
+Possible evidence:
+
+### Strong positive evidence
+
+- Channel country matches target country.
+- Channel description identifies the target country.
+- Video title contains target-country cinema terminology.
+- Description contains target-country terminology.
+- Video uses target-country language.
+- Known actors/directors/producers associated with the target territory.
+- Known local production companies.
+- Known local television/movie brands.
+- Channel is already trusted for that country.
+- Historical videos from the same channel consistently belong to the target country.
+- Country-specific query discovered the video.
+- Multiple independent queries identify the same country.
+
+### Negative evidence
+
+- Video clearly belongs to another country.
+- Channel country strongly conflicts with target territory.
+- Title/description indicate another country's cinema.
+- The content is internationally unrelated.
+- Search query is the only evidence supporting the country.
+Create:
+
+```
+countryScore: number // 0–100
+```
+A country score must be based on accumulated evidence, not a single keyword.
+
+---
+
+# 5. CONTENT TYPE CLASSIFICATION
+V2 must improve classification substantially.
+
+Possible primary content types:
+
+```
+"movie"
+"series"
+"season"
+"episode"
+"trailer"
+"teaser"
+"clip"
+"interview"
+"music"
+"review"
+"reaction"
+"news"
+"short"
+"documentary"
+"unknown"
+```
+Do not classify content solely from duration.
+
+Duration is evidence, not proof.
+
+For example:
+
+```
+120-minute video
+```
+must not automatically become a movie.
+
+It could be:
+
+- A compilation
+- A TV episode
+- A livestream
+- An interview
+- A documentary
+- A full movie
+- A playlist-like upload
+- A multi-episode upload
+Classification must combine title, description, duration, channel history, metadata, keywords, and relationships with previously discovered content.
+
+---
+
+# 6. SERIES / EPISODE DETECTION — HIGH PRIORITY
+This is one of the most important V2 requirements.
+
+The system must be able to recognize episodes even when naming is inconsistent.
+
+Do NOT rely only on:
+
+```
+S01E01
+S01E02
+```
+Recognize many patterns, including:
+
+```
+S1 E1
+S01 E01
+S1E1
+S01E01
+Season 1 Episode 1
+Season One Episode One
+Season 2 Ep 5
+S2 Ep5
+Episode 5
+Ep 5
+EP5
+E05
+Part 5
+Part 05
+Episode Five
+Ep. 5
+2x05
+2 x 05
+Season 2 - Episode 5
+Season 2 | Episode 5
+Season 2: Episode 5
+```
+Also support poorly formatted titles such as:
+
+```
+Series Name Ep 7
+Series Name Episode 8
+Series Name 08
+Series Name Part 9
+Series Name - 10
+Series Name S2 11
+Series Name Season 2 12
+```
+Do not assume the number after the title is always an episode number.
+
+Use additional evidence:
+
+- Description
+- Duration
+- Channel upload history
+- Nearby uploads
+- Repeated title patterns
+- Thumbnail similarity where metadata is available
+- Actors
+- Characters
+- Series title
+- Season references
+- Previous and next discovered episodes
+- Upload chronology
+- Playlist relationships
+- YouTube playlist information when available
+
+---
+
+# 7. SERIES ENTITY RESOLUTION
+Do not store every episode as an isolated discovery.
+
+V2 must attempt to determine the parent series.
+
+Create a canonical series identity.
+
+Example:
+
+```
+Series:
+    Example Series
+
+Season 1:
+    Episode 1
+    Episode 2
+    Episode 3
+
+Season 2:
+    Episode 1
+    Episode 2
+    Episode 3
+```
+If titles vary:
+
+```
+Example Series Ep 1
+Example Series Episode 2
+Example Series S01E03
+Example Series - Part 4
+Example Series Season One Episode Five
+```
+they should still be evaluated as possible members of the same series.
+
+Create a stable internal identifier such as:
+
+```
+seriesId
+```
+Do NOT use the YouTube video ID as the series ID.
+
+---
+
+# 8. SEASON RESOLUTION
+Create:
+
+```
+seasonNumber?: number
+```
+and associate episodes with:
+
+```
+seriesId
+seasonNumber
+episodeNumber
+```
+Support unknown values.
+
+Do not invent season numbers.
+
+If the system knows:
+
+```
+series = Example Series
+episode = 7
+season = unknown
+```
+store the known information without fabricating a season.
+
+If later evidence identifies Season 2, update the stored record.
+
+---
+
+# 9. EPISODE RESOLUTION
+Create:
+
+```
+episodeNumber?: number
+episodeNumberConfidence?: number
+```
+The system must distinguish:
+
+```
+episode number explicitly stated
+```
+from:
+
+```
+episode number inferred
+```
+Store evidence/reasons explaining the decision.
+
+Example:
+
+```
+episodeEvidence: [
+    "Title contains Episode 7",
+    "Same channel has Episode 6 and Episode 8",
+    "Upload chronology supports episode 7",
+    "Series title matches existing series entity"
+]
+```
+
+---
+
+# 10. SCATTERED EPISODE NAMING
+The system must handle a season whose episodes are uploaded with inconsistent naming.
+
+Example:
+
+```
+My Series Ep 1
+My Series Episode 2
+My Series Part 3
+My Series S01E04
+My Series - 5
+My Series Season 1 Ep 6
+My Series E07
+```
+These must not automatically become seven unrelated series.
+
+V2 should use relationship resolution.
+
+Use evidence from:
+
+- Normalized series title
+- Channel ID
+- Channel history
+- Description
+- Actors
+- Characters
+- Season references
+- Episode references
+- Upload dates
+- Adjacent episode numbers
+- YouTube playlists
+- Repeated descriptions
+- Repeated thumbnails where practical
+- Shared production information
+- Country
+- Language
+The system should maintain a confidence score for these relationships.
+
+---
+
+# 11. SERIES CONFIDENCE
+Create:
+
+```
+seriesConfidence: number // 0–100
+```
+For an episode to be automatically published as an episode:
+
+```
+overallScore >= 76
+AND
+seriesConfidence >= configured minimum
+```
+The minimum must be configurable.
+
+Recommended initial value:
+
+```
+seriesConfidence >= 80
+```
+If the content has a high Overall Score but weak series identification, send it to pending review rather than automatically publishing it as a confidently identified episode.
+
+---
+
+# 12. MOVIE DETECTION
+A movie candidate should require multiple signals.
+
+Positive signals can include:
+
+- Long-form duration
+- Full movie/full film language
+- Country-specific full-film terminology
+- Strong cinema metadata
+- Movie category
+- Trusted channel
+- Consistent channel history
+- Description indicating a complete film
+- Known film title
+- Absence of episode indicators
+- Absence of trailer/clip/interview indicators
+Negative signals:
+
+- Episode indicators
+- Season indicators
+- Trailer
+- Teaser
+- Clip
+- Scene
+- Interview
+- Review
+- Reaction
+- Music
+- News
+- Compilation
+- Countdown
+- Shorts
+A long video must NOT automatically be classified as a movie.
+
+---
+
+# 13. TRUSTED CHANNEL SYSTEM V2
+Keep the existing:
+
+```
+approved
+pending
+rejected
+```
+channel lifecycle.
+
+However, add a normalized:
+
+```
+channelTrustScore: number // 0–100
+```
+A channel must NOT become trusted simply because one video scored highly.
+
+Channel trust should consider accumulated evidence.
+
+Positive evidence:
+
+- Multiple qualifying movies/series discovered.
+- Consistent target-country content.
+- Consistent cinema content.
+- Historical publication success.
+- Few rejected videos.
+- Few false classifications.
+- Strong metadata quality.
+- Channel country matches target country.
+- Official/authorized source indicators.
+- Administrator approval history.
+- Consistent upload patterns.
+Negative evidence:
+
+- Large amount of unrelated content.
+- Repeated trailers/clips mislabeled as movies.
+- Repeated wrong-country content.
+- Spam.
+- Reuploads with suspicious metadata.
+- High rejection rate.
+- Frequent classification conflicts.
+- Explicit administrator rejection.
+
+---
+
+# 14. CHANNEL AUTO-TRUST RULE
+Recommended V2 policy:
+
+```
+channelTrustScore < 35
+    → rejected
+
+35–75
+    → pending
+
+76–89
+    → pending / monitored
+
+90–100
+    → eligible for automatic trust
+```
+However, a score of 90 alone is NOT sufficient.
+
+Automatic trust should require historical evidence.
+
+Recommended minimum requirements:
+
+```
+channelTrustScore >= 90
+AND
+at least 3 qualifying discovered items
+AND
+country consistency >= 85
+AND
+no hard rejection signals
+AND
+evidence from at least 2 discovery runs
+```
+Only then may the channel automatically move to:
+
+```
+approved
+```
+If those requirements are not met, keep it:
+
+```
+pending
+```
+This prevents one lucky video from making an entire channel trusted.
+
+---
+
+# 15. TRUSTED CHANNELS REMAIN GLOBAL
+Continue storing trusted channel information in Firestore.
+
+Use:
+
+```
+trustedChannels/{channelId}
+```
+as the global persistent channel intelligence record.
+
+Do not rely only on localStorage.
+
+A user's browser must not need to rediscover whether a channel is trusted.
+
+Store:
+
+```
+channelId
+channelTitle
+countryCode
+trustState
+channelTrustScore
+countryScore
+contentQualityScore
+qualifyingItemCount
+rejectedItemCount
+publishedItemCount
+reviewedItemCount
+firstDiscoveredAt
+lastDiscoveredAt
+lastScannedAt
+lastEvaluatedAt
+approval metadata
+rejection metadata
+scan status
+notes
+autoPublishMovies
+autoPublishSeries
+```
+
+---
+
+# 16. GLOBAL FIRESTORE DISCOVERY MEMORY
+Firestore must be treated as the canonical persistent discovery database.
+
+Continue using:
+
+```
+geoContent/{videoId}
+trustedChannels/{channelId}
+customQueries/{queryId}
+system_meta/auto_discovery
+```
+Add any required collections/documents for series and seasons.
+
+Recommended structure:
+
+```
+geoSeries/{seriesId}
+
+geoSeries/{seriesId}/seasons/{seasonId}
+```
+or another normalized structure if the existing application architecture has a better fit.
+
+Do not duplicate large metadata unnecessarily.
+
+---
+
+# 17. SERIES DATA MODEL
+A series entity should contain information such as:
+
+```
+{
+    seriesId,
+    canonicalTitle,
+    normalizedTitle,
+    countryCode,
+    language,
+    channelIds,
+    confidence,
+    seasonCount,
+    episodeCount,
+    firstDiscoveredAt,
+    lastUpdatedAt,
+    status
+}
+```
+Season:
+
+```
+{
+    seasonId,
+    seriesId,
+    seasonNumber,
+    episodeCount,
+    knownEpisodeNumbers,
+    confidence,
+    firstDiscoveredAt,
+    lastUpdatedAt
+}
+```
+Episode content:
+
+```
+{
+    videoId,
+    seriesId,
+    seasonNumber,
+    episodeNumber,
+    episodeConfidence,
+    overallScore,
+    classification,
+    status
+}
+```
+
+---
+
+# 18. PERSISTENT DISCOVERY MEMORY
+Every discovery must record where it came from.
+
+Add fields such as:
+
+```
+discoveredByQueries
+discoveryRuns
+firstDiscoveredAt
+lastDiscoveredAt
+lastScannedAt
+lastEvaluatedAt
+```
+For example:
+
+```
+discoveredByQueries: [
+    "rwanda full movies",
+    "filime nyarwanda",
+    "rwandan movies"
+]
+```
+This allows future scans to understand that the same video was independently discovered through multiple queries.
+
+Multiple independent discoveries can increase confidence.
+
+---
+
+# 19. DO NOT RESCAN EVERYTHING
+Discovery V2 must avoid repeatedly processing the same videos unnecessarily.
+
+Before expensive processing:
+
+```
+YouTube candidate
+      ↓
+Check Firestore
+      ↓
+Already known?
+   /        \
+ YES         NO
+ │            │
+ ▼            ▼
+Check whether  Full processing
+re-evaluation  required
+is due
+```
+If an item is already known and its metadata has not materially changed, avoid full reclassification.
+
+Use:
+
+```
+lastScannedAt
+lastEvaluatedAt
+nextEvaluationAt
+```
+to determine when it should be checked again.
+
+---
+
+# 20. CACHE STRATEGY
+Use two levels of caching.
+
+### Global persistent cache
+Firestore:
+
+```
+geoContent
+trustedChannels
+geoSeries
+seasons
+discovery metadata
+```
+This is shared across all users.
+
+### Browser performance cache
+Use:
+
+```
+memory cache
+localStorage
+```
+only to accelerate reads.
+
+Browser cache must never be considered authoritative.
+
+When Firestore changes, browser cache must have a way to refresh/invalidate.
+
+---
+
+# 21. INCREMENTAL DISCOVERY
+Future discovery scans should prioritize:
+
+```
+new videos
+new channels
+new episodes
+new seasons
+previously unknown candidates
+recent uploads
+items whose metadata changed
+items due for re-evaluation
+```
+Do not rebuild the entire database from zero on every scan.
+
+Maintain discovery history so the system continually gets stronger.
+
+---
+
+# 22. DUPLICATE DETECTION
+The same movie or episode may be discovered through multiple queries.
+
+Deduplicate by:
+
+```
+YouTube video ID
+```
+For cross-upload duplicates, additionally compare:
+
+- Normalized title
+- Channel
+- Duration
+- Description
+- Publication date
+- Series
+- Season
+- Episode
+- Country
+- Other metadata
+Do not merge videos merely because titles are similar.
+
+Maintain:
+
+```
+duplicateOf?: string
+duplicateConfidence?: number
+```
+when appropriate.
+
+---
+
+# 23. OVERALL SCORE EXPLANATION
+Every score must be explainable.
+
+Store:
+
+```
+scoreReasons: string[]
+positiveSignals: string[]
+negativeSignals: string[]
+```
+Example:
+
+```
+Overall Score: 89
+
+Positive:
++ Country strongly matches Rwanda
++ Long-form content
++ Full-film terminology
++ Trusted channel history
++ Description identifies complete film
++ No episode indicators
+
+Negative:
+- Country evidence partially inferred
+```
+Administrators must be able to understand why an item received its score.
+
+---
+
+# 24. SCORE MUST NOT CLAIM CERTAINTY
+A score of 95 does NOT mean:
+
+```
+95% legally verified
+95% copyright verified
+95% guaranteed movie
+```
+It means:
+
+```
+95/100 discovery confidence according to the V2 evidence model.
+```
+The UI must label it appropriately.
+
+Do not call the score a copyright score or rights-verification score.
+
+---
+
+# 25. RIGHTS VERIFICATION
+Keep:
+
+```
+rightsVerified: false
+```
+unless a real human/authorized workflow explicitly verifies rights.
+
+A YouTube API response does not establish distribution rights.
+
+Do not automatically set:
+
+```
+rightsVerified = true
+```
+because a channel is trusted.
+
+Trusted channel ≠ verified distribution rights.
+
+---
+
+# 26. PUBLICATION DECISION OBJECT
+Create a centralized function:
+
+```
+evaluatePublicationDecision(candidate)
+```
+It must return something similar to:
+
+```
+{
+    overallScore,
+    decision,
+    reasons,
+    hardGateFailures,
+    classification,
+    countryScore,
+    seriesConfidence,
+    channelTrustScore
+}
+```
+Possible decisions:
+
+```
+published
+pending_review
+rejected
+```
+All publication decisions must pass through this centralized logic.
+
+Do not duplicate publication rules across multiple components.
+
+---
+
+# 27. EXAMPLE DECISIONS
+
+### Example 1 — Strong movie
+
+```
+Overall: 91
+Country: 94
+Movie confidence: 93
+Channel trust: 91
+Embeddable: yes
+Hard failures: none
+```
+Result:
+
+```
+PUBLISHED
+```
+
+---
+
+### Example 2 — Medium-confidence movie
+
+```
+Overall: 62
+Country: 87
+Movie confidence: 70
+Channel trust: 55
+```
+Result:
+
+```
+PENDING_REVIEW
+```
+
+---
+
+### Example 3 — Weak candidate
+
+```
+Overall: 27
+```
+Result:
+
+```
+REJECTED
+```
+
+---
+
+### Example 4 — High score but trailer
+
+```
+Overall: 94
+Trailer signal: strong
+```
+Result:
+
+```
+REJECTED
+```
+The hard exclusion wins.
+
+---
+
+### Example 5 — Episode with weak series identification
+
+```
+Overall: 86
+Classification: episode
+Series confidence: 61
+```
+Result:
+
+```
+PENDING_REVIEW
+```
+Do not automatically publish it as a confidently identified episode.
+
+---
+
+### Example 6 — Strong episode
+
+```
+Overall: 91
+Classification: episode
+Series confidence: 93
+Episode confidence: 95
+Country score: 91
+```
+Result:
+
+```
+PUBLISHED
+```
+
+---
+
+# 28. IMPORTANT: DO NOT BREAK EXISTING ADMIN FEATURES
+Preserve existing functionality:
+
+- Add channel
+- Approve channel
+- Reject channel
+- Pause channel
+- Toggle auto-publish movies
+- Toggle auto-publish series
+- Scan channel uploads
+- Bulk approve
+- Bulk reject
+- Bulk pause
+- Custom queries
+- Country configuration
+- Manual discovery
+- Discovery summaries
+- Firestore persistence
+Upgrade the intelligence behind these features instead of removing them.
+
+---
+
+# 29. ADMIN UI IMPROVEMENTS
+Expose:
+
+```
+Overall Score
+Country Score
+Movie Score
+Series Score
+Episode Score
+Channel Trust Score
+Series Confidence
+Episode Confidence
+```
+Allow administrators to see:
+
+```
+Why was this published?
+Why is this pending?
+Why was this rejected?
+Why was this channel trusted?
+Why was this channel rejected?
+```
+Provide expandable evidence/reason sections.
+
+---
+
+# 30. SCORING THRESHOLD CONFIGURATION
+Centralize:
+
+```
+AUTO_REJECT_THRESHOLD = 35
+AUTO_PUBLISH_THRESHOLD = 76
+```
+Do not hardcode these values in multiple places.
+
+Channel thresholds should also be centralized.
+
+Example:
+
+```
+CHANNEL_AUTO_REJECT_THRESHOLD = 35
+CHANNEL_PENDING_THRESHOLD = 75
+CHANNEL_AUTO_TRUST_THRESHOLD = 90
+```
+The content publication threshold remains:
+
+```
+76
+```
+
+---
+
+# 31. TESTING REQUIREMENTS
+Add automated tests covering at minimum:
+
+### Movies
+
+- Valid full movie
+- Trailer
+- Teaser
+- Clip
+- Interview
+- Music video
+- Short
+- Long compilation
+- Full movie with weak country evidence
+- Full movie from trusted channel
+
+### Series
+
+- S01E01
+- Season 1 Episode 1
+- Episode 1
+- Ep 1
+- 1x01
+- Part 1
+- Scattered naming
+- Missing season number
+- Missing episode number
+- Same series with different title formats
+
+### Scores
+
+```
+34 → rejected
+35 → pending
+75 → pending
+76 → published
+100 → published
+0 → rejected
+```
+
+### Hard gates
+A score above 76 must still be rejected when:
+
+- non-embeddable
+- explicitly rejected channel
+- clearly trailer
+- clearly clip
+- clearly unrelated country
+
+### Channels
+Test:
+
+```
+channel score < 35
+35–75
+76–89
+90+
+```
+and verify that the minimum historical evidence requirements are respected.
+
+---
+
+# 32. PERFORMANCE REQUIREMENTS
+Discovery V2 must be optimized for repeated scans.
+
+Do not:
+
+- Rescan every known video unnecessarily.
+- Recalculate expensive classification when nothing changed.
+- Re-fetch channel metadata repeatedly.
+- Duplicate Firestore writes.
+- Repeat identical queries unnecessarily.
+Prefer:
+
+```
+Firestore lookup
+→ cache hit
+→ only process what needs processing
+```
+Batch YouTube metadata requests wherever the API allows.
+
+---
+
+# 33. FINAL ARCHITECTURE
+The final Discovery V2 architecture should behave like:
+
+```
+                 COUNTRY CONFIG
+                      │
+                      ▼
+               CURATED QUERIES
+                      │
+                      ▼
+               YOUTUBE SEARCH
+                      │
+                      ▼
+                DEDUPLICATION
+                      │
+                      ▼
+              EXISTING MEMORY?
+                 /          \
+               YES           NO
+                │             │
+         evaluate freshness   full analysis
+                │             │
+                └──────┬──────┘
+                       ▼
+               METADATA ANALYSIS
+                       │
+                       ▼
+              COUNTRY ANALYSIS
+                       │
+                       ▼
+             MOVIE/SERIES ANALYSIS
+                       │
+                       ▼
+             SEASON/EPISODE LINKING
+                       │
+                       ▼
+              CHANNEL TRUST ANALYSIS
+                       │
+                       ▼
+                SCORE 0–100
+                       │
+                       ▼
+                HARD GATES
+                       │
+                       ▼
+             PUBLICATION DECISION
+              /        |        \
+             /         |         \
+          <35        35–75       76+
+            │           │          │
+         REJECT       PENDING     AUTO
+                                  PUBLISH
+                       │
+                       ▼
+                  FIRESTORE
+                       │
+             ┌─────────┼─────────┐
+             ▼         ▼         ▼
+          Content    Channels   Series
+             │         │         │
+             └─────────┼─────────┘
+                       ▼
+              GLOBAL DISCOVERY MEMORY
+                       │
+                       ▼
+              FUTURE SCANS GET SMARTER
+```
+
+---
+
+# 34. CORE PRINCIPLE
+Discovery V2 must not behave like a simple search engine.
+
+It must behave like a **persistent discovery intelligence system**.
+
+Every scan should add knowledge.
+
+Every discovered video should contribute evidence.
+
+Every trusted channel should accumulate historical trust.
+
+Every series should accumulate episode/season relationships.
+
+Every future scan should use what was learned previously.
+
+The goal is:
+
+```
+SCAN
+ ↓
+LEARN
+ ↓
+STORE
+ ↓
+REUSE
+ ↓
+DISCOVER BETTER
+ ↓
+LEARN MORE
+```
+Do not throw away discovery intelligence after each scan.
+
+Firestore is the global persistent memory.
+
+LocalStorage is only a local performance cache.
+
+The **Overall Score 0–100** is the primary publication gate:
+
+```
+<35  = REJECT
+35–75 = PENDING REVIEW
+76–100 = AUTO PUBLISH
+```
+Hard safety gates override the score.
+
+Trusted channels require stronger historical evidence than a single high-scoring video.
+
+Series/season/episode relationship resolution is a first-class feature and must be treated as a major V2 improvement over V1.
+
+# DISCOVERY V2 — HIGH-RICH SEARCH KEYWORD & QUERY ENGINE
+Add a dedicated **Search Intelligence / Query Expansion Engine** to Discovery V2.
+
+The purpose is to dramatically improve YouTube discovery for:
+
+1. Full movies
+2. Series
+3. Episodes
+4. Seasons
+5. Newly uploaded episodes with inconsistent naming
+6. Country-specific cinema
+7. Local-language cinema
+8. Older catalog content
+9. Independent/low-budget cinema
+10. Trusted-channel content
+Do NOT rely on one or two generic queries such as:
+
+```
+Rwanda movies
+Uganda movies
+Kenya movies
+```
+Those queries are too broad.
+
+The system must generate a rich set of search variants from structured keyword families.
+
+---
+
+# 1. SEARCH ENGINE PRINCIPLE
+YouTube Search considers relevance, engagement and quality, with relevance influenced by metadata such as title, tags, description and video content.
+
+Discovery V2 should therefore search using combinations of:
+
+```
+COUNTRY
++
+LANGUAGE
++
+CINEMA TERM
++
+CONTENT TYPE
++
+FORMAT TERM
++
+GENRE
++
+LOCAL TERMINOLOGY
++
+YEAR
++
+CHANNEL
+```
+Do not blindly combine every keyword with every other keyword.
+
+Use a query-generation strategy that creates **high-signal combinations**.
+
+---
+
+# 2. MINIMUM KEYWORD REQUIREMENT
+Every country configuration must have at least:
+
+```
+40+ movie-oriented keywords
+40+ series-oriented keywords
+40+ episode-oriented keywords
+```
+These are keyword/phrase candidates, not necessarily 120 individual API calls.
+
+The query engine must intelligently combine them into a smaller number of high-value queries.
+
+---
+
+# 3. MOVIE KEYWORD LIBRARY
+Each country must support at least these movie-intent keyword families.
+
+## A. Full movie terms
+
+```
+full movie
+full film
+full length movie
+full length film
+complete movie
+complete film
+entire movie
+entire film
+watch full movie
+watch full film
+full feature film
+feature film
+full feature movie
+complete feature film
+complete feature movie
+full cinema
+full-length film
+full-length movie
+whole movie
+whole film
+movie full
+film full
+movie complete
+film complete
+full movie online
+full film online
+watch movie
+watch film
+full movie HD
+full movie 1080p
+full movie 4K
+movie HD
+film HD
+```
+
+## B. Cinema terms
+
+```
+movie
+film
+cinema
+feature
+feature film
+motion picture
+film production
+local film
+local movie
+independent film
+indie film
+African film
+African movie
+African cinema
+local cinema
+national cinema
+```
+
+## C. Release/catalog terms
+
+```
+new movie
+new film
+latest movie
+latest film
+new release
+film release
+movie release
+recent movie
+recent film
+2026 movie
+2025 movie
+2024 movie
+2023 movie
+2022 movie
+2021 movie
+classic movie
+classic film
+old movie
+old film
+vintage film
+```
+The year terms must be generated dynamically rather than permanently hardcoded.
+
+---
+
+# 4. MOVIE GENRE KEYWORDS
+Each country should maintain genre expansion.
+
+Minimum supported genre families:
+
+```
+action
+adventure
+comedy
+romance
+romantic comedy
+drama
+family
+crime
+thriller
+mystery
+horror
+supernatural
+fantasy
+historical
+war
+biography
+documentary
+faith
+religious
+inspirational
+musical
+African drama
+African comedy
+African romance
+African action
+African thriller
+African horror
+independent drama
+independent film
+```
+The engine should also support country-specific genre terminology.
+
+---
+
+# 5. MOVIE LOCALIZATION PATTERN
+Never search only:
+
+```
+Rwanda full movie
+```
+Generate combinations such as:
+
+```
+Rwandan full movie
+Rwanda full film
+Rwandan full film
+Rwanda cinema
+Rwandan cinema
+Rwanda movie
+Rwandan movie
+Rwanda feature film
+Rwandan feature film
+Rwanda complete movie
+Rwandan complete film
+Rwanda latest movie
+Rwandan latest film
+Rwanda African movie
+Rwandan African film
+```
+The same pattern must be dynamically generated for:
+
+```
+RW
+UG
+KE
+NG
+GH
+TZ
+ZA
+US
+```
+using the country's:
+
+- official name
+- demonym
+- adjective
+- local cinema terminology
+- major languages
+- language-specific movie words
+- common spelling variations
+
+---
+
+# 6. SERIES KEYWORD LIBRARY
+Every country must have at least 40 series-oriented search terms.
+
+Minimum library:
+
+```
+series
+TV series
+television series
+TV show
+show
+drama series
+African series
+African TV series
+African TV show
+local series
+local TV series
+local show
+full series
+complete series
+watch series
+new series
+latest series
+new TV series
+latest TV series
+web series
+African web series
+local web series
+drama
+TV drama
+African drama series
+local drama series
+season
+full season
+complete season
+season 1
+season 2
+season 3
+season 4
+season 5
+season one
+season two
+season three
+season four
+season five
+full episodes
+complete episodes
+TV episodes
+```
+The system must generate season numbers dynamically.
+
+Do not hardcode only seasons 1–5.
+
+Support:
+
+```
+Season 1
+Season 2
+...
+Season 20
+```
+or higher when useful.
+
+---
+
+# 7. SERIES DISCOVERY QUERY PATTERNS
+Generate patterns such as:
+
+```
+Rwandan TV series
+Rwanda TV series
+Rwandan drama series
+Rwanda drama series
+Rwandan web series
+Rwanda web series
+Rwandan television series
+Rwanda television show
+Rwandan complete series
+Rwanda full series
+Rwandan season
+Rwanda season 1
+Rwandan season 1
+Rwanda complete season
+Rwandan complete season
+```
+Repeat dynamically for each country.
+
+---
+
+# 8. EPISODE KEYWORD LIBRARY
+Every country must have at least 40 episode-oriented terms.
+
+Minimum library:
+
+```
+episode
+episodes
+ep
+eps
+episode 1
+episode 2
+episode 3
+episode 4
+episode 5
+ep 1
+ep 2
+ep 3
+ep 4
+ep 5
+ep.
+ep.
+full episode
+full episodes
+complete episode
+complete episodes
+new episode
+latest episode
+new episodes
+latest episodes
+watch episode
+watch full episode
+full TV episode
+full series episode
+TV episode
+television episode
+show episode
+series episode
+drama episode
+African episode
+African TV episode
+local episode
+season episode
+season 1 episode
+season 2 episode
+season 3 episode
+season 4 episode
+season 5 episode
+```
+
+---
+
+# 9. EPISODE NUMBER PATTERNS
+The search engine must generate multiple representations of episode numbers.
+
+For episode N:
+
+```
+Episode N
+Ep N
+Ep. N
+EP N
+EP. N
+E N
+E0N
+E00N
+Episode 0N
+Episode 00N
+Part N
+Part 0N
+N
+```
+For season S and episode E:
+
+```
+SSEEE
+SSE
+S01E01
+S1E1
+S01 E01
+S1 E1
+S01-E01
+S1-E1
+S01/E01
+S1/E1
+Season 1 Episode 1
+Season One Episode One
+Season 1 Ep 1
+Season 1 EP 1
+Season 1 E1
+1x01
+1 x 01
+1X01
+1 x 1
+```
+Do not assume all creators use standard TV notation.
+
+---
+
+# 10. SCATTERED NAMING SEARCH STRATEGY
+This is mandatory.
+
+The query engine must specifically search for poorly named episodes.
+
+Examples:
+
+```
+Series Name episode
+Series Name ep
+Series Name part
+Series Name season
+Series Name season 2
+Series Name 2
+Series Name 03
+Series Name 04
+Series Name 5
+Series Name full episode
+Series Name new episode
+Series Name latest episode
+Series Name continuation
+Series Name part 2
+Series Name part two
+Series Name chapter
+Series Name chapter 2
+```
+The classifier must then determine whether the result is actually an episode.
+
+Search terms are evidence only.
+
+---
+
+# 11. MULTILINGUAL KEYWORD EXPANSION
+Each country configuration must define:
+
+```
+languages
+defaultLanguage
+searchLanguages
+```
+For each language, maintain:
+
+```
+movieTerms
+filmTerms
+seriesTerms
+episodeTerms
+seasonTerms
+fullContentTerms
+localCinemaTerms
+```
+Example structure:
+
+```
+{
+    language: "Kinyarwanda",
+
+    movieTerms: [
+        "...",
+        "..."
+    ],
+
+    seriesTerms: [
+        "...",
+        "..."
+    ],
+
+    episodeTerms: [
+        "...",
+        "..."
+    ]
+}
+```
+Do not translate English keywords mechanically and assume the result is commonly used.
+
+Prioritize terms actually used by local creators.
+
+---
+
+# 12. COUNTRY KEYWORD EXPANSION
+Every country must maintain:
+
+```
+countryName
+countryAdjective
+demonym
+capital
+majorCities
+languages
+localCinemaTerms
+localMovieTerms
+localSeriesTerms
+localEpisodeTerms
+```
+For example:
+
+```
+Rwanda
+Rwandan
+Kigali
+Rwandan cinema
+Rwandan movie
+Rwandan film
+Rwanda film
+Rwanda movie
+```
+Equivalent structures must exist for:
+
+```
+Uganda
+Kenya
+Nigeria
+Ghana
+Tanzania
+South Africa
+United States / African-American cinema
+```
+Do not rely on the country name alone.
+
+---
+
+# 13. NEGATIVE SEARCH TERMS
+Discovery V2 must also maintain exclusion keyword families.
+
+These are useful for reducing noisy discovery, but must NOT be treated as absolute truth because creators sometimes use ambiguous terminology.
+
+Movie exclusions:
+
+```
+trailer
+teaser
+clip
+scene
+scenes
+highlight
+highlights
+interview
+reaction
+review
+recap
+ending explained
+explained
+behind the scenes
+BTS
+making of
+short
+shorts
+music video
+song
+lyrics
+soundtrack
+news
+top 10
+top 5
+countdown
+compilation
+```
+Episode exclusions when searching specifically for complete series:
+
+```
+trailer
+teaser
+promo
+preview
+clip
+recap
+review
+reaction
+interview
+```
+The query engine may generate exclusions such as:
+
+```
+"Rwandan full movie" -trailer -teaser -clip
+```
+where supported/appropriate.
+
+However, do not rely entirely on search exclusions.
+
+The classifier must still inspect returned videos.
+
+---
+
+# 14. SEARCH QUERY TIERS
+Do not treat all queries equally.
+
+Create query tiers.
+
+## Tier 1 — Highest signal
+Exact content intent:
+
+```
+"<country>" "full movie"
+"<demonym>" "full movie"
+"<country>" "full film"
+"<demonym>" "full film"
+"<country>" "feature film"
+"<demonym>" "feature film"
+```
+
+## Tier 2 — Local cinema
+
+```
+"<demonym>" cinema
+"<country>" cinema
+"<demonym>" movie
+"<country>" movie
+"<demonym>" film
+"<country>" film
+```
+
+## Tier 3 — Language
+
+```
+"<local-language>" movie
+"<local-language>" film
+"<local-language>" full movie
+"<local-language>" full film
+```
+
+## Tier 4 — Genre
+
+```
+"<demonym>" comedy movie
+"<demonym>" drama movie
+"<demonym>" romance movie
+"<demonym>" action movie
+"<demonym>" horror movie
+```
+
+## Tier 5 — Series
+
+```
+"<demonym>" TV series
+"<demonym>" drama series
+"<demonym>" web series
+"<country>" TV series
+```
+
+## Tier 6 — Episodes
+
+```
+"<series name>" episode
+"<series name>" ep
+"<series name>" full episode
+"<series name>" season
+"<series name>" S01E01
+"<series name>" 1x01
+```
+
+---
+
+# 15. DO NOT RUN 40 API CALLS PER CATEGORY BY DEFAULT
+The requirement for 40+ keywords does NOT mean:
+
+```
+40 movie API calls
++
+40 series API calls
++
+40 episode API calls
+=
+120 API calls per country
+```
+That would unnecessarily consume YouTube quota.
+
+Instead:
+
+```
+40+ keyword vocabulary
+        ↓
+query expansion engine
+        ↓
+rank candidate queries
+        ↓
+select high-value queries
+        ↓
+deduplicate queries
+        ↓
+execute limited query budget
+```
+The keyword library is large.
+
+The active scan query set is controlled by a quota-aware ranking system.
+
+---
+
+# 16. QUERY SCORING
+Every generated query should receive a priority score.
+
+Example:
+
+```
+queryPriority =
+    countryRelevance
+  + localLanguageRelevance
+  + contentIntent
+  + historicalYield
+  + freshnessPotential
+  + channelDiscoveryPotential
+```
+Queries that repeatedly produce good candidates should increase in priority.
+
+Queries that repeatedly produce irrelevant results should decrease in priority.
+
+---
+
+# 17. QUERY PERFORMANCE MEMORY
+Store query performance in Firestore.
+
+Recommended:
+
+```
+discoveryQueryStats/{queryHash}
+```
+Fields:
+
+```
+{
+    queryHash,
+    countryCode,
+    query,
+    type,
+
+    runs,
+    candidateCount,
+    qualifyingCount,
+    publishedCount,
+    pendingCount,
+    rejectedCount,
+
+    averageOverallScore,
+    averageCountryScore,
+
+    lastRunAt,
+    lastSuccessfulRunAt,
+    nextRunAt,
+
+    priorityScore
+}
+```
+This allows Discovery V2 to learn which searches actually work.
+
+---
+
+# 18. QUERY DEDUPLICATION
+Normalize queries before execution.
+
+These should be recognized as effectively similar when appropriate:
+
+```
+Rwanda full movie
+rwanda full movie
+Rwandan full movie
+```
+Do not blindly discard country-adjective variations because they can produce different results.
+
+Instead, use:
+
+```
+exact duplicate detection
++
+semantic query family grouping
+```
+
+---
+
+# 19. SEARCH USING YOUTUBE API FILTERS
+When appropriate, use the YouTube Data API's `videoType` parameter.
+
+The API supports:
+
+```
+videoType=movie
+videoType=episode
+```
+when `type=video`.
+
+Therefore V2 should have separate discovery passes:
+
+```
+Movie API discovery
+    videoType=movie
+
+Episode API discovery
+    videoType=episode
+
+General discovery
+    no restrictive videoType
+```
+Do NOT use `videoType=movie` or `videoType=episode` as the sole classifier.
+
+It is an additional discovery signal.
+
+---
+
+# 20. MOVIE DISCOVERY PASSES
+For each country:
+
+```
+PASS 1
+Country + full movie
+
+PASS 2
+Demonym + full movie
+
+PASS 3
+Country + full film
+
+PASS 4
+Demonym + full film
+
+PASS 5
+Country + cinema
+
+PASS 6
+Demonym + cinema
+
+PASS 7
+Local language + movie
+
+PASS 8
+Local language + film
+
+PASS 9
+Genre + country
+
+PASS 10
+Recent/new/latest + country
+```
+Only execute the highest-value queries within the configured quota budget.
+
+---
+
+# 21. SERIES DISCOVERY PASSES
+For each country:
+
+```
+Country + TV series
+Demonym + TV series
+Country + drama series
+Demonym + drama series
+Country + web series
+Demonym + web series
+Country + full series
+Demonym + full series
+Country + season
+Demonym + season
+Local language + series
+Local language + drama
+```
+Then use discovered series names to generate targeted episode queries.
+
+---
+
+# 22. EPISODE DISCOVERY PASSES
+Once a series is discovered:
+
+```
+Series Name + episode
+Series Name + ep
+Series Name + full episode
+Series Name + season
+Series Name + S01
+Series Name + S02
+Series Name + 1x
+Series Name + episode 1
+Series Name + episode 2
+...
+```
+Do NOT search every possible episode number indefinitely.
+
+Use known gaps.
+
+Example:
+
+```
+Known:
+Episode 1
+Episode 2
+Episode 4
+Episode 5
+
+Missing:
+Episode 3
+```
+Automatically prioritize:
+
+```
+Series Name Episode 3
+Series Name Ep 3
+Series Name E03
+Series Name S01E03
+Series Name 1x03
+```
+This is a major V2 feature.
+
+---
+
+# 23. EPISODE GAP DISCOVERY
+For every known series/season:
+
+```
+knownEpisodeNumbers
+```
+must be maintained.
+
+If:
+
+```
+1, 2, 4, 5, 7
+```
+are known, V2 should actively search for:
+
+```
+3
+6
+```
+before spending resources on already-known episodes.
+
+This turns discovery into an intelligent incremental process.
+
+---
+
+# 24. NEW EPISODE DETECTION
+When a series has:
+
+```
+1–10
+```
+and a new video is discovered containing:
+
+```
+Episode 11
+```
+the system must automatically:
+
+1. Resolve the series.
+2. Resolve the season.
+3. Assign episode 11.
+4. Calculate confidence.
+5. Store it.
+6. Compare with existing episodes.
+7. Update series metadata.
+8. Update season metadata.
+9. Evaluate publication.
+10. Record the discovery run.
+
+---
+
+# 25. CHANNEL-SPECIFIC DISCOVERY
+For approved/trusted channels, create additional queries using:
+
+```
+channel identity
++
+movie terms
+series terms
+episode terms
+```
+When possible, prefer channel-specific scanning and uploads playlist scanning rather than repeatedly performing broad global searches.
+
+The YouTube API provides upload/channel metadata and supports playlist-based retrieval; use those existing mechanisms already present in the project.
+
+---
+
+# 26. QUERY ROTATION
+Do not execute exactly the same query set every scan.
+
+Use:
+
+```
+core queries
++
+high-performing historical queries
++
+new experimental queries
++
+freshness queries
++
+episode-gap queries
++
+trusted-channel queries
+```
+Example allocation:
+
+```
+60% proven queries
+20% new/experimental queries
+10% freshness queries
+10% gap/channel queries
+```
+Make this configurable.
+
+---
+
+# 27. QUERY FRESHNESS
+Queries should have different scan frequencies.
+
+Example:
+
+```
+High-yield query
+→ frequent
+
+Medium-yield query
+→ normal
+
+Low-yield query
+→ less frequent
+
+Zero-yield query
+→ temporarily paused
+```
+Do not permanently delete low-performing queries.
+
+They can be reactivated later.
+
+---
+
+# 28. SEARCH KEYWORD STORAGE
+Do not hardcode all keyword lists inside the worker.
+
+Create structured configuration.
+
+Example:
+
+```
+interface DiscoveryKeywordSet {
+    movie: string[];
+    series: string[];
+    episode: string[];
+    season: string[];
+    fullContent: string[];
+    genres: string[];
+    negative: string[];
+    localCinema: string[];
+}
+```
+Country:
+
+```
+interface GeoCountryConfig {
+    ...
+    discoveryKeywords: DiscoveryKeywordSet;
+}
+```
+Language:
+
+```
+interface LanguageKeywordSet {
+    languageCode: string;
+    movie: string[];
+    series: string[];
+    episode: string[];
+    season: string[];
+    cinema: string[];
+}
+```
+
+---
+
+# 29. ADMIN KEYWORD MANAGEMENT
+Administrators should eventually be able to:
+
+```
+Add keyword
+Remove keyword
+Disable keyword
+Promote keyword
+Set keyword priority
+Set country
+Set language
+Set content type
+View keyword performance
+```
+Store custom additions in Firestore.
+
+Do not modify source code every time an administrator discovers a useful local term.
+
+---
+
+# 30. SEARCH INTELLIGENCE LOOP
+The complete loop should become:
+
+```
+Keyword Library
+      ↓
+Query Generator
+      ↓
+Query Ranking
+      ↓
+Quota Budget
+      ↓
+YouTube Search
+      ↓
+Candidate Videos
+      ↓
+Deduplication
+      ↓
+Classification
+      ↓
+Overall Score
+      ↓
+Firestore
+      ↓
+Query Performance Statistics
+      ↓
+Query Ranking improves
+      ↓
+Next Discovery Run
+```
+The discovery engine should therefore **learn which search terms actually find valuable cinema**.
+
+---
+
+# 31. IMPORTANT DISTINCTION
+Keywords are not classification truth.
+
+For example:
+
+```
+"full movie"
+```
+does NOT prove that a video is a full movie.
+
+Likewise:
+
+```
+"episode"
+```
+does NOT prove that a video is an episode.
+
+Keywords are discovery signals.
+
+The classifier must inspect the full metadata and relationship evidence before deciding the final content type.
+
+---
+
+# 32. FINAL QUERY TARGET
+Discovery V2 should aim for:
+
+```
+HIGH RECALL
++
+HIGH PRECISION
++
+LOW DUPLICATION
++
+LOW QUOTA WASTE
++
+CONTINUOUS LEARNING
+```
+The system should discover more content without simply increasing the number of API calls.
+
+A smaller number of intelligent queries that repeatedly produce strong candidates is preferable to hundreds of generic searches.
+
+---
+
+# 33. REQUIRED MINIMUMS
+For every configured territory:
+
+```
+40+ movie keywords
+40+ series keywords
+40+ episode keywords
+20+ season keywords
+20+ full-content keywords
+20+ negative/exclusion keywords
+10+ genre keywords
+10+ local cinema terms
+```
+These minimums must be validated automatically.
+
+If a country configuration does not meet the minimum:
+
+```
+configuration warning
+```
+must appear in the admin interface.
+
+---
+
+# 34. DISCOVERY V2 SUCCESS CONDITION
+Discovery V2 is considered successful when it can find content that V1 misses because:
+
+- Creator uses local language.
+- Creator uses a local spelling variation.
+- Movie is not titled "full movie".
+- Series title does not contain "series".
+- Episode does not use S01E01.
+- Season is missing from the title.
+- Episode number is written as words.
+- Episode is called "Part 7".
+- Episode is simply numbered.
+- New episodes are uploaded with inconsistent naming.
+- Content is discovered through a trusted channel rather than a generic query.
+- Existing series has missing episode numbers.
+- The same content is found through multiple query families.
+The engine must continuously store this discovery knowledge in Firestore and reuse it during future scans.

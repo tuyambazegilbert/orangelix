@@ -21,7 +21,9 @@ import {
   Heart,
   SlidersHorizontal,
   ArrowRight,
+  Download,
 } from 'lucide-react';
+import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAllCountries, getCountryConfig } from '@/features/geo/countryConfig';
 import { GeoContentService } from '@/services/geo-content-service';
@@ -49,6 +51,7 @@ const primaryLinks = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/movies', label: 'Movies', icon: Compass },
   { to: '/series', label: 'TV Shows', icon: Tv },
+  { to: '/downloads', label: 'Downloads', icon: Download },
   { to: '/trending', label: 'Trending', icon: Sparkles },
   { to: '/new', label: 'New Releases', icon: Moon },
   { to: '/genres', label: 'Genres', icon: Grid },
@@ -71,6 +74,7 @@ interface QuickTmdbMatch {
 
 export default function Navbar() {
   const { currentUser, logout, isLoading } = useAuth();
+  const { totalCount: downloadsCount } = useOfflineDownloads();
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState('');
@@ -320,6 +324,23 @@ export default function Navbar() {
               }
             >
               My List
+            </NavLink>
+
+            <NavLink
+              to="/downloads"
+              className={({ isActive }) =>
+                `rounded-lg px-2.5 py-1.5 text-xs font-semibold transition flex items-center gap-1.5 ${
+                  isActive ? 'bg-white/[.08] text-orange-400' : 'text-slate-300 hover:text-white hover:bg-white/[.04]'
+                }`
+              }
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Downloads</span>
+              {downloadsCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-orange-500 text-white rounded-full text-[9px] font-black leading-none">
+                  {downloadsCount}
+                </span>
+              )}
             </NavLink>
           </nav>
 

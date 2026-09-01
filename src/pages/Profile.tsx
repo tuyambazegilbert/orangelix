@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { FirebaseData, LibraryItem } from '@/lib/firebase-data';
 import { MovieService } from '@/lib/movies';
+import { normalizeGenreList, normalizeIsoDate } from '@/lib/utils';
 import {
   User,
   WatchHistoryItem,
@@ -142,7 +143,14 @@ export default function Profile() {
         return [...local, ...cloud.map(mapCloudLibrary).filter((item) => !seen.has(item.id))];
       };
 
-      setWatchHistory(fsHistory);
+      const normalizedHistory: WatchHistoryItem[] = fsHistory.map((item) => ({
+        ...item,
+        title: item.title || 'Untitled',
+        genre: normalizeGenreList(item.genre),
+        watchedAt: normalizeIsoDate(item.watchedAt),
+      }));
+
+      setWatchHistory(normalizedHistory);
       setRatings(fsRatings);
       setFavorites(mergeLibrary(mappedFavs, cloudFavorites));
       setWatchLater(mergeLibrary(mappedWatchLater, cloudWatchLater));
@@ -174,16 +182,23 @@ export default function Profile() {
     // Favorite genre
     const genreCounts: { [key: string]: number } = {};
     watchHistory.forEach((h) => {
-      (h.genre || ['Action']).forEach((g) => {
+      const genres = normalizeGenreList(h.genre).length ? normalizeGenreList(h.genre) : ['Action'];
+      genres.forEach((g) => {
         genreCounts[g] = (genreCounts[g] || 0) + 1;
       });
     });
     const sortedGenres = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
     const topGenre = sortedGenres[0]?.[0] || 'Action';
 
-    // Approximate active streak
+    // Approximate active streak (Safe Date Parsing)
     const uniqueDays = new Set(
-      watchHistory.map((h) => new Date(h.watchedAt).toISOString().split('T')[0])
+      watchHistory
+        .map((h) => {
+          if (!h.watchedAt) return null;
+          const d = new Date(h.watchedAt);
+          return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+        })
+        .filter(Boolean)
     );
 
     return {

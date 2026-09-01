@@ -79,8 +79,13 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AutoDiscoveryScheduler, AutoDiscoveryStatus } from '@/services/auto-discovery-scheduler';
+import { getDiscoveryV2Profile, validateV2Profile } from '@/features/youtube/discoveryV2';
 
 export default function YouTubeGeoAdminTab() {
+  // V1 and V2 deliberately remain separate scan paths. Switching views never
+  // changes the classifier used by a running discovery job.
+  const [activeEngine, setActiveEngine] = useState<'v1' | 'v2'>('v1');
+  const [v2RunMode, setV2RunMode] = useState<'manual' | 'incremental'>('incremental');
   const [countries] = useState<GeoCountryConfig[]>(() => getAllCountries());
   const [selectedCountry, setSelectedCountry] = useState<string>('RW');
   const [contentItems, setContentItems] = useState<GeoContentItem[]>([]);
@@ -112,6 +117,14 @@ export default function YouTubeGeoAdminTab() {
   const [selectedChannelIds, setSelectedChannelIds] = useState<Set<string>>(new Set());
   const [selectedQueryIds, setSelectedQueryIds] = useState<Set<string>>(new Set());
 
+  // Discovery V2 States
+  const [isRunningV2Discovery, setIsRunningV2Discovery] = useState(false);
+  const [isReprocessingV2, setIsReprocessingV2] = useState(false);
+  const [v2DiscoveryResult, setV2DiscoveryResult] = useState<Record<string, unknown> | null>(null);
+  const [v2CacheStats, setV2CacheStats] = useState<Record<string, unknown> | null>(null);
+  const [showV2Comparison, setShowV2Comparison] = useState(false);
+  const [activeV2Section, setActiveV2Section] = useState<'discovery' | 'comparison' | 'series'>('discovery');
+
   const [stats, setStats] = useState({
     totalDiscovered: 0,
     publishedMovies: 0,
@@ -123,6 +136,9 @@ export default function YouTubeGeoAdminTab() {
 
   const country = getCountryConfig(selectedCountry);
   const hasApiKey = YouTubeClient.hasApiKey();
+  const v2ProfileWarnings = activeEngine === 'v2'
+    ? validateV2Profile(getDiscoveryV2Profile(selectedCountry, country as unknown as Parameters<typeof getDiscoveryV2Profile>[1]))
+    : [];
 
   const loadData = async () => {
     setIsLoading(true);
@@ -608,8 +624,128 @@ export default function YouTubeGeoAdminTab() {
 
   const discStats: DiscoveryStats | undefined = summaryLog?.stats;
 
+  // V2 Discovery Handler
+  const handleRunV2Discovery = async () => {
+    setIsRunningV2Discovery(true);
+    toast.info(`Running Discovery V2 for ${country.name}...`);
+    try {
+      // Import V2 discovery engine
+      const { runDiscoveryV2 } = await import('@/features/youtube/discoveryV2');
+      
+      // Run discovery with dry-run for testing
+      const result = await runDiscoveryV2(
+        selectedCountry,
+        country as unknown as Parameters<typeof runDiscoveryV2>[1],
+        v2RunMode,
+        {
+          maxQueries: 20,
+          skipCache: false,
+          dryRun: false,
+        }
+      );
+      
+      setV2DiscoveryResult({
+        ...result,
+        cacheHitRate: result.queriesExecuted
+          ? Math.round((result.cacheHits / result.queriesExecuted) * 100)
+          : 0,
+        seriesCount: result.seriesFound,
+      });
+      setShowV2Comparison(true);
+      setActiveV2Section('discovery');
+      
+      toast.success(
+        `V2 Discovery Complete! Published: ${result.published}, Pending: ${result.pendingReview}, Rejected: ${result.rejected}`
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'V2 Discovery failed';
+      console.error('V2 Discovery error:', err);
+      toast.error(`V2 Discovery Error: ${msg}`);
+    } finally {
+      setIsRunningV2Discovery(false);
+    }
+  };
+
+  const handleReprocessV2 = async () => {
+    setIsReprocessingV2(true);
+    try {
+      const { reprocessDiscoveryV2 } = await import('@/features/youtube/discoveryV2');
+      const count = await reprocessDiscoveryV2(selectedCountry, country as unknown as Parameters<typeof reprocessDiscoveryV2>[1]);
+      toast.success(`Reprocessed ${count} stored ${country.name} records without calling YouTube.`);
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'V2 reprocessing failed');
+    } finally {
+      setIsReprocessingV2(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
+      {/* Engine navigation: each button activates an independent scan pipeline. */}
+      <Card className="bg-gray-900/70 border-gray-800 backdrop-blur-xl">
+        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-white">YouTube Discovery Engine</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {activeEngine === 'v1'
+                ? 'V1 uses the existing stateless discovery worker and legacy publication rules.'
+                : 'V2 uses Firestore cache, locking, evidence scoring, and persistent series knowledge.'}
+            </p>
+          </div>
+          <div className="inline-flex rounded-lg bg-gray-950 border border-gray-800 p-1">
+            <Button
+              size="sm"
+              onClick={() => setActiveEngine('v1')}
+              className={`text-xs ${activeEngine === 'v1' ? 'bg-orange-500 hover:bg-orange-500 text-white' : 'bg-transparent text-gray-400 hover:text-white'}`}
+            >
+              <Youtube className="w-3.5 h-3.5 mr-1.5" /> Discovery V1
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setActiveEngine('v2')}
+              className={`text-xs ${activeEngine === 'v2' ? 'bg-violet-600 hover:bg-violet-600 text-white' : 'bg-transparent text-gray-400 hover:text-white'}`}
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Discovery V2
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {activeEngine === 'v2' && (
+        <Card className="bg-gradient-to-r from-violet-950/45 via-gray-900/90 to-blue-950/30 border-violet-500/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-white flex items-center gap-2"><Sparkles className="w-4 h-4 text-violet-400" /> Discovery V2 Control Center</CardTitle>
+            <CardDescription className="text-xs text-gray-400">Persistent, incremental discovery. Only administrators run scans; public users read Firestore.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col lg:flex-row lg:items-center gap-3">
+            <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+              <SelectTrigger className="w-full lg:w-[180px] bg-gray-950 border-gray-700 text-xs text-white"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                {countries.map((c) => <SelectItem key={c.countryCode} value={c.countryCode} className="text-xs">{c.flagEmoji} {c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={v2RunMode} onValueChange={(value: 'manual' | 'incremental') => setV2RunMode(value)}>
+              <SelectTrigger className="w-full lg:w-[190px] bg-gray-950 border-gray-700 text-xs text-white"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                <SelectItem value="incremental" className="text-xs">Incremental (cache-first)</SelectItem>
+                <SelectItem value="manual" className="text-xs">Manual country scan</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleRunV2Discovery} disabled={isRunningV2Discovery || !hasApiKey} className="bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold">
+              <Sparkles className={`w-3.5 h-3.5 mr-1.5 ${isRunningV2Discovery ? 'animate-spin' : ''}`} />
+              {isRunningV2Discovery ? 'Running V2…' : `Run V2 for ${country.name}`}
+            </Button>
+            <Button onClick={handleReprocessV2} disabled={isReprocessingV2} variant="outline" className="bg-gray-950 border-gray-700 text-xs text-violet-300 hover:text-white">
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isReprocessingV2 ? 'animate-spin' : ''}`} />
+              {isReprocessingV2 ? 'Reprocessing…' : 'Reprocess Stored'}
+            </Button>
+            {!hasApiKey && <p className="text-xs text-amber-400">A restricted VITE_YOUTUBE_API_KEY is required to scan.</p>}
+            {v2ProfileWarnings.length > 0 && <p className="text-xs text-amber-400">V2 keyword profile warning: {v2ProfileWarnings.join(', ')}</p>}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-gray-900/60 border-gray-800 backdrop-blur-xl">
@@ -665,7 +801,8 @@ export default function YouTubeGeoAdminTab() {
         </Card>
       </div>
 
-      {/* 3x-Weekly Automated Discovery Schedule Control Card */}
+      {activeEngine === 'v1' && <>
+      {/* V1: existing 3x-weekly browser scheduler and legacy worker controls. */}
       <Card className="relative overflow-hidden bg-gradient-to-r from-orange-950/40 via-gray-900/90 to-purple-950/30 border-orange-500/30 shadow-xl">
         <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="space-y-2">
@@ -908,7 +1045,7 @@ export default function YouTubeGeoAdminTab() {
       </div>
 
       {/* Section Navigation */}
-      <div className="flex items-center gap-3 border-b border-gray-800 pb-3">
+      <div className="flex flex-wrap items-center gap-3 border-b border-gray-800 pb-3">
         <Button
           size="sm"
           onClick={() => setActiveSection('content')}
@@ -947,6 +1084,9 @@ export default function YouTubeGeoAdminTab() {
           <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5" />
           Search Queries Config ({countryQueries.length})
         </Button>
+
+        <div className="flex-1" />
+
       </div>
 
       {/* SECTION 1: SEARCH QUERIES CONFIGURATION */}
@@ -1419,6 +1559,195 @@ export default function YouTubeGeoAdminTab() {
         </Card>
       )}
 
+      </>}
+
+      {/* V2 DISCOVERY RESULTS SECTION */}
+      {activeEngine === 'v2' && showV2Comparison && v2DiscoveryResult && (
+        <Card className="relative overflow-hidden bg-gradient-to-r from-violet-950/40 via-gray-900/90 to-blue-950/30 border-violet-500/30 shadow-xl mb-6">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base text-white flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-violet-400" />
+                  Discovery V2 Run Results — {country.name}
+                </CardTitle>
+                <CardDescription className="text-xs text-gray-400">
+                  Persistent cache-first discovery with explainable 0–100 scoring
+                </CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowV2Comparison(false)}
+                className="h-7 px-2 text-xs text-gray-400 hover:text-white"
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            {/* V2 Results Tabs */}
+            <div className="flex gap-2 border-b border-gray-800 pb-3">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setActiveV2Section('discovery')}
+                className={`text-xs ${activeV2Section === 'discovery' ? 'border-b-2 border-violet-500 text-violet-400' : 'text-gray-400'}`}
+              >
+                <PlayCircle className="w-3 h-3 mr-1" />
+                Discovery Stats
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setActiveV2Section('comparison')}
+                className={`text-xs ${activeV2Section === 'comparison' ? 'border-b-2 border-violet-500 text-violet-400' : 'text-gray-400'}`}
+              >
+                <Layers className="w-3 h-3 mr-1" />
+                V1 vs V2 Comparison
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setActiveV2Section('series')}
+                className={`text-xs ${activeV2Section === 'series' ? 'border-b-2 border-violet-500 text-violet-400' : 'text-gray-400'}`}
+              >
+                <Radio className="w-3 h-3 mr-1" />
+                Series Management
+              </Button>
+            </div>
+
+            {/* Discovery Stats Tab */}
+            {activeV2Section === 'discovery' && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-lg bg-gray-950/80 border border-gray-800">
+                  <p className="text-[11px] text-gray-400 uppercase tracking-wider">Published</p>
+                  <p className="text-lg font-bold text-emerald-400 mt-1">{v2DiscoveryResult.published || 0}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-950/80 border border-gray-800">
+                  <p className="text-[11px] text-gray-400 uppercase tracking-wider">Pending Review</p>
+                  <p className="text-lg font-bold text-amber-400 mt-1">{v2DiscoveryResult.pendingReview || 0}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-950/80 border border-gray-800">
+                  <p className="text-[11px] text-gray-400 uppercase tracking-wider">Rejected</p>
+                  <p className="text-lg font-bold text-rose-400 mt-1">{v2DiscoveryResult.rejected || 0}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-950/80 border border-gray-800">
+                  <p className="text-[11px] text-gray-400 uppercase tracking-wider">Cache Hit Rate</p>
+                  <p className="text-lg font-bold text-cyan-400 mt-1">{v2DiscoveryResult.cacheHitRate || '—'}%</p>
+                </div>
+              </div>
+            )}
+
+            {/* V1 vs V2 Comparison Tab */}
+            {activeV2Section === 'comparison' && (
+              <div className="p-4 rounded-lg bg-gray-950/80 border border-gray-800">
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <p className="text-gray-400 mb-2">Metric</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-orange-400 font-semibold mb-2">V1 (Current)</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-violet-400 font-semibold mb-2">V2 (New)</p>
+                  </div>
+
+                  <div className="col-span-3 border-t border-gray-800/50"></div>
+
+                  <div>
+                    <p className="text-gray-300">Scoring Method</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-500">Single 0-60 score</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-300">11-dimensional 0-100</p>
+                  </div>
+
+                  <div className="col-span-3 border-t border-gray-800/50"></div>
+
+                  <div>
+                    <p className="text-gray-300">Publication</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-500">Manual review</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-300">Auto (35/76 gates)</p>
+                  </div>
+
+                  <div className="col-span-3 border-t border-gray-800/50"></div>
+
+                  <div>
+                    <p className="text-gray-300">Series Linking</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-500">Manual grouping</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-300">Automatic (patterns)</p>
+                  </div>
+
+                  <div className="col-span-3 border-t border-gray-800/50"></div>
+
+                  <div>
+                    <p className="text-gray-300">Caching</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-500">Per-run browser worker</p>
+                  </div>
+                  <div className="border-l border-gray-800 pl-4">
+                    <p className="text-gray-300">Firestore query and metadata reuse</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Series Management Tab */}
+            {activeV2Section === 'series' && (
+              <div className="p-4 rounded-lg bg-gray-950/80 border border-gray-800">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-gray-300">Discovered Series</p>
+                  <Badge variant="secondary" className="text-[11px]">{v2DiscoveryResult.seriesCount || 0} series</Badge>
+                </div>
+                {v2DiscoveryResult.seriesCount > 0 ? (
+                  <div className="text-xs text-gray-400 space-y-2">
+                    <p>✓ Series/Season/Episode hierarchy created</p>
+                    <p>✓ Episode deduplication applied</p>
+                    <p>✓ Series fingerprinting enabled</p>
+                    <p className="text-violet-400 font-semibold">→ Ready for episode linking review</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 py-4 text-center">No series detected in this scan</p>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                size="sm"
+                onClick={handleRunV2Discovery}
+                disabled={isRunningV2Discovery}
+                className="text-xs bg-violet-600 hover:bg-violet-500 text-white"
+              >
+                <RefreshCw className={`w-3 h-3 mr-1.5 ${isRunningV2Discovery ? 'animate-spin' : ''}`} />
+                {isRunningV2Discovery ? 'Re-running...' : 'Run V2 Again'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowV2Comparison(false)}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                Close Results
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* SECTION 3: CONTENT MODERATION TABLE (Section 19) */}
       {activeSection === 'content' && (
         <Card className="bg-gray-900/60 border-gray-800">
@@ -1605,7 +1934,8 @@ export default function YouTubeGeoAdminTab() {
                           </TableCell>
 
                           <TableCell>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5">
                               <Badge
                                 variant="outline"
                                 className={`text-[10px] uppercase font-semibold ${
@@ -1618,7 +1948,13 @@ export default function YouTubeGeoAdminTab() {
                               >
                                 {item.classification}
                               </Badge>
-                              <span className="font-mono text-[11px] text-gray-400 font-bold">{item.score || 0}</span>
+                              <span className="font-mono text-[11px] text-gray-400 font-bold">{((item as Record<string, unknown>).overallScore as number) ?? item.score ?? 0}/100</span>
+                              </div>
+                              {activeEngine === 'v2' && (item as Record<string, unknown>).scoringDimensions && (
+                                <p className="text-[9px] text-gray-500" title={((item as Record<string, unknown>).scoreReasons as Array<{ explanation: string }> | undefined)?.map((reason) => reason.explanation).join('\n') || 'No stored evidence'}>
+                                  Geo {((item as Record<string, unknown>).geoScore as number) ?? ((item as Record<string, unknown>).scoringDimensions as Record<string, number>).countryScore} · Content {((item as Record<string, unknown>).contentScore as number) ?? ((item as Record<string, unknown>).scoringDimensions as Record<string, number>).contentTypeScore} · Series {((item as Record<string, unknown>).seriesScore as number) ?? ((item as Record<string, unknown>).scoringDimensions as Record<string, number>).seriesScore}
+                                </p>
+                              )}
                             </div>
                           </TableCell>
 

@@ -5,7 +5,7 @@
 
 import { KeyboardEvent, useEffect, useRef, useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Info, Play, Star, Globe, Youtube, Calendar } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { GeoContentItem, GeoCountryConfig } from '@/types/geo-content';
 import {
   Select,
@@ -45,6 +45,7 @@ export default function CountryStageSlider({
   onCountryChange,
   onLanguageChange,
 }: CountryStageSliderProps) {
+  const navigate = useNavigate();
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
   const touchStart = useRef<number | null>(null);
@@ -245,35 +246,56 @@ export default function CountryStageSlider({
             const itemThumb = item.thumbnail || item.thumbnailUrl || `https://img.youtube.com/vi/${item.youtubeVideoId}/hqdefault.jpg`;
             const itemScore = item.score ?? item.classificationScore ?? 80;
             const itemYear = item.publishedAt ? new Date(item.publishedAt).getFullYear() : '2026';
+            const itemWatchUrl = `/${(item.country || country.countryCode).toLowerCase()}/movies/${item.slug || item.id}`;
 
             return (
               <button
                 key={`${item.id}-${offset}`}
-                onClick={() => setActive(circularIndex(active + offset, count))}
+                onClick={() => {
+                  if (current) {
+                    navigate(itemWatchUrl);
+                  } else {
+                    setActive(circularIndex(active + offset, count));
+                  }
+                }}
                 onMouseEnter={current ? () => setPaused(true) : undefined}
                 onMouseLeave={current ? () => setPaused(false) : undefined}
-                className={`absolute h-[190px] w-[130px] sm:h-[300px] sm:w-[200px] md:h-[320px] md:w-[214px] overflow-hidden rounded-xl border border-white/[.12] bg-[#101724] text-left transition-[transform,opacity,filter] duration-500 ease-out ${className} ${
-                  current ? 'h-[225px] w-[155px] sm:h-[370px] sm:w-[250px] md:h-[405px] md:w-[270px]' : 'hover:opacity-90'
+                className={`absolute h-[190px] w-[130px] sm:h-[300px] sm:w-[200px] md:h-[320px] md:w-[214px] overflow-hidden rounded-xl border border-white/[.12] bg-[#101724] text-left transition-[transform,opacity,filter] duration-500 ease-out cursor-pointer group/card ${className} ${
+                  current
+                    ? 'h-[225px] w-[155px] sm:h-[370px] sm:w-[250px] md:h-[405px] md:w-[270px] ring-2 ring-orange-500/80 shadow-[0_20px_50px_rgba(249,115,22,0.3)]'
+                    : 'hover:opacity-90'
                 }`}
                 aria-current={current ? 'true' : undefined}
-                aria-label={`Show ${item.title}`}
+                aria-label={current ? `Watch ${item.title}` : `Show ${item.title}`}
               >
                 <img
                   src={itemThumb}
                   alt={item.title}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-105"
                 />
 
                 {current && (
-                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-2.5 pt-10 sm:px-4 sm:pb-3.5 sm:pt-14">
-                    <span className="block truncate text-xs font-bold text-white">
-                      {item.title}
+                  <>
+                    {/* Animated Center Play Button Overlay on Hover */}
+                    <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center gap-2">
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-orange-600 to-amber-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/50 transform scale-90 group-hover/card:scale-100 transition-transform duration-300">
+                        <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-current ml-0.5" />
+                      </div>
+                      <span className="text-xs sm:text-sm font-bold text-white tracking-wide uppercase drop-shadow-md">
+                        Watch Now
+                      </span>
+                    </div>
+
+                    <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-2.5 pt-10 sm:px-4 sm:pb-3.5 sm:pt-14">
+                      <span className="block truncate text-xs font-bold text-white">
+                        {item.title}
+                      </span>
+                      <span className="mt-0.5 flex items-center justify-between text-[10px] text-orange-300">
+                        <span>{(itemScore / 10).toFixed(1)} ★ · {item.durationFormatted}</span>
+                        <span className="text-slate-300 font-normal">{itemYear}</span>
+                      </span>
                     </span>
-                    <span className="mt-0.5 flex items-center justify-between text-[10px] text-orange-300">
-                      <span>{(itemScore / 10).toFixed(1)} ★ · {item.durationFormatted}</span>
-                      <span className="text-slate-300 font-normal">{itemYear}</span>
-                    </span>
-                  </span>
+                  </>
                 )}
               </button>
             );
