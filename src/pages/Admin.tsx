@@ -615,10 +615,12 @@ export default function Admin() {
                 <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-                      Total Users
+                      Firebase Users
                     </p>
                     <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalUsers}</h3>
-                    
+                    <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Live auth + profile accounts
+                    </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center">
                     <Users className="w-6 h-6 text-orange-400" />
@@ -633,6 +635,9 @@ export default function Admin() {
                       Catalog Titles
                     </p>
                     <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalMovies}</h3>
+                    <p className="text-xs text-yellow-400 mt-1 flex items-center gap-1">
+                      <Film className="w-3 h-3" /> Library snapshot from custom + local catalog
+                    </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center">
                     <Film className="w-6 h-6 text-yellow-400" />
@@ -647,7 +652,9 @@ export default function Admin() {
                       Review Queue
                     </p>
                     <h3 className="text-xl sm:text-2xl font-extrabold text-white">{stats.totalReviews}</h3>
-                    
+                    <p className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
+                      <Star className="w-3 h-3" /> Community ratings + comments
+                    </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
                     <MessageSquare className="w-6 h-6 text-emerald-400" />
@@ -659,15 +666,21 @@ export default function Admin() {
                 <CardContent className="p-3 sm:p-4 flex items-center justify-between">
                   <div>
                     <p className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-                      Total Discoved video
+                      Discovery Index
                     </p>
                     <div className="flex items-center gap-2">
                       <span className="text-xl font-bold text-white">
                         {geoDiscoveryStats?.totalDiscovered ?? 0}
                       </span>
                     </div>
-                   
-                    
+                    <p className="text-xs text-blue-400 mt-1 flex items-center gap-1">
+                      {firebaseEnabled ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      )}
+                      {firebaseEnabled ? 'YouTube + geo discovery snapshot' : 'Local standby'}
+                    </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center">
                     <Database className="w-6 h-6 text-blue-400" />

@@ -640,10 +640,10 @@ export const FirebaseData = {
     }
   },
 
-  async setHistory(userId: string, media: StoredContent | { title?: string; genres?: string[]; posterUrl?: string; imageUrl?: string; mediaType?: string; tmdbId?: number }, seconds: number, total: number) {
+  async setHistory(userId: string, media: StoredContent | { id?: string; title?: string; genres?: string[]; posterUrl?: string; imageUrl?: string; mediaType?: string; tmdbId?: number }, seconds: number, total: number) {
     if (!firestore) return;
     try {
-      const id = contentId(media as StoredContent);
+      const id = 'id' in media && media.id ? media.id : contentId(media as StoredContent);
       const title = 'title' in media ? media.title || 'Untitled' : 'Untitled';
       const posterUrl = 'posterUrl' in media ? media.posterUrl : ('imageUrl' in media ? media.imageUrl : undefined);
       const mediaType = ('mediaType' in media && media.mediaType === 'tv') ? 'tv' : 'movie';

@@ -363,22 +363,25 @@ export default function CountryMovieDetail() {
               const mid = `geo-${movie.id || movie.youtubeVideoId}`;
               localStorage.setItem(`orangeflix_progress_${mid}`, String(Math.floor(seconds)));
               if (currentUser) {
+                const genreArray = (movie.tags || []).slice(0, 3);
+                const primaryGenre = genreArray.length > 0 ? genreArray[0] : 'Regional Cinema';
+                
                 void FirebaseData.setHistory(
                   currentUser.id,
                   {
-                    id: movie.id,
+                    id: movie.id || movie.youtubeVideoId,
                     tmdbId: 0,
                     mediaType: 'movie',
                     title: movie.title,
-                    description: movie.description,
+                    description: movie.description || `From ${country.name}`,
                     posterUrl: movie.thumbnail || movie.thumbnailUrl,
                     backdropUrl: movie.thumbnail || movie.thumbnailUrl,
                     duration: Math.round((movie.durationSeconds || 0) / 60),
-                    rating: 4.8,
-                    voteAverage: 9.6,
-                    voteCount: 120,
-                    releaseYear: 2026,
-                    genres: [country.name + ' Cinema'],
+                    rating: Math.min(5, Number((Number(movie.score || movie.classificationScore || 0) / 20).toFixed(1)) || 4),
+                    voteAverage: Number(movie.score || movie.classificationScore || 85),
+                    voteCount: Number(movie.views || movie.viewCount || 0),
+                    releaseYear: movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : 2026,
+                    genres: [country.name, primaryGenre, 'Cinema'].filter(Boolean),
                   },
                   seconds,
                   duration
