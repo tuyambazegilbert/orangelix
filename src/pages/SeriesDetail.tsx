@@ -28,6 +28,7 @@ import {
   Layers,
   Music2,
   Download,
+  HardDriveDownload,
   CheckCircle2,
 } from 'lucide-react';
 import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
@@ -354,6 +355,7 @@ export default function SeriesDetail() {
                 </Button>
 
                 {/* Download for Offline Button */}
+                {/* Download and Save to Device Memory (.MP4) */}
                 <Button
                   size="lg"
                   variant="outline"
@@ -369,24 +371,29 @@ export default function SeriesDetail() {
                       rating: series.voteAverage,
                       genres: series.genres,
                       youtubeVideoId: series.trailerKey || undefined,
+                      saveToDevice: true,
                     });
                   }}
                   disabled={isDownloaded(`tv-${series.tmdbId}`) || getDownloadProgress(`tv-${series.tmdbId}`)?.status === 'downloading'}
                   className={`border-orange-500/30 text-orange-400 hover:bg-orange-500/20 ${
                     isDownloaded(`tv-${series.tmdbId}`) ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400' : ''
                   }`}
+                  title="Download and save .MP4 file directly to device storage"
                 >
                   {isDownloaded(`tv-${series.tmdbId}`) ? (
                     <>
                       <CheckCircle2 className="w-5 h-5 mr-2 text-emerald-400" /> Downloaded
+                      <CheckCircle2 className="w-5 h-5 mr-2 text-emerald-400" /> Downloaded (.MP4 Saved)
                     </>
                   ) : getDownloadProgress(`tv-${series.tmdbId}`)?.status === 'downloading' ? (
                     <>
                       <Download className="w-5 h-5 mr-2 animate-bounce text-orange-400" /> {getDownloadProgress(`tv-${series.tmdbId}`)?.progress}%
+                      <Download className="w-5 h-5 mr-2 animate-bounce text-orange-400" /> Saving {getDownloadProgress(`tv-${series.tmdbId}`)?.progress}%
                     </>
                   ) : (
                     <>
                       <Download className="w-5 h-5 mr-2" /> Download
+                      <HardDriveDownload className="w-5 h-5 mr-2" /> Download & Save (.MP4)
                     </>
                   )}
                 </Button>

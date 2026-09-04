@@ -23,6 +23,7 @@ import {
   Minimize,
   Settings,
   Download,
+  HardDriveDownload,
   CheckCircle2,
   Tv,
   Sparkles,
@@ -516,6 +517,7 @@ export default function AdvancedCinematicPlayer({
       country,
       videoUrl: videoUrl || undefined,
       youtubeVideoId: effectiveYoutubeId || undefined,
+      saveToDevice: true,
     });
   };
 
@@ -1011,6 +1013,7 @@ export default function AdvancedCinematicPlayer({
               </DropdownMenu>
 
               {/* In-Player Offline Download Button */}
+              {/* In-Player Offline Download & Device Storage Button */}
               <Button
                 variant="ghost"
                 size="sm"
@@ -1023,11 +1026,11 @@ export default function AdvancedCinematicPlayer({
                     ? 'border-orange-500/40 bg-orange-500/10 text-orange-400 animate-pulse'
                     : 'border-white/15 bg-white/[.06] text-white hover:bg-white/[.12]'
                 }`}
-                title="Download for Offline Playback"
+                title="Download and save .MP4 file directly to device storage"
               >
                 {alreadyDownloaded ? (
                   <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> <span className="hidden sm:inline ml-1">Downloaded</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> <span className="hidden sm:inline ml-1">.MP4 Saved</span>
                   </>
                 ) : downloadState?.status === 'downloading' ? (
                   <>
@@ -1036,6 +1039,7 @@ export default function AdvancedCinematicPlayer({
                 ) : (
                   <>
                     <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline ml-1">Download</span>
+                    <HardDriveDownload className="w-3.5 h-3.5" /> <span className="hidden sm:inline ml-1">Save .MP4</span>
                   </>
                 )}
               </Button>

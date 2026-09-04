@@ -15,6 +15,7 @@ import {
   Music2,
   BookOpen,
   Download,
+  HardDriveDownload,
   CheckCircle2,
   Flame,
   CloudSun,
@@ -513,6 +514,7 @@ export default function Watch() {
                 </button>
 
                 {/* Offline Download button */}
+                {/* Offline Download & Device Storage button */}
                 <button
                   onClick={() => {
                     void startDownload({
@@ -527,6 +529,7 @@ export default function Watch() {
                       genres: media.genres,
                       videoUrl: directVideo || undefined,
                       youtubeVideoId: media.trailerKey || undefined,
+                      saveToDevice: true,
                     });
                   }}
                   disabled={isDownloaded(rawId) || getDownloadProgress(rawId)?.status === 'downloading'}
@@ -537,18 +540,22 @@ export default function Watch() {
                       ? 'border-orange-500/40 bg-orange-500/10 text-orange-400 animate-pulse'
                       : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
                   }`}
+                  title="Download and save .MP4 file to device storage/memory"
                 >
                   {isDownloaded(rawId) ? (
                     <>
                       <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Downloaded (Offline)
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Downloaded (.MP4 Saved)
                     </>
                   ) : getDownloadProgress(rawId)?.status === 'downloading' ? (
                     <>
                       <Download className="h-4 w-4 animate-bounce" /> {getDownloadProgress(rawId)?.progress}%
+                      <Download className="h-4 w-4 animate-bounce text-orange-400" /> Saving {getDownloadProgress(rawId)?.progress}%
                     </>
                   ) : (
                     <>
                       <Download className="h-4 w-4" /> Download for Offline
+                      <HardDriveDownload className="h-4 w-4 text-orange-400" /> Download & Save (.MP4)
                     </>
                   )}
                 </button>

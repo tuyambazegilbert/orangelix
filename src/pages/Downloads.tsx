@@ -1,7 +1,8 @@
 /**
  * OrangeFlix Offline Downloads Hub
  * Route: /downloads
- * Manage, search, delete, and stream all saved offline movies with 0 internet connection.
+ * Manage, search, delete, and stream all saved offline movies with 0 internet connection
+ * and export .MP4 video files directly to device storage memory.
  */
 
 import React, { useState, useMemo } from 'react';
@@ -13,13 +14,11 @@ import {
   HardDrive,
   WifiOff,
   Search,
-  Filter,
   Film,
   Tv,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
+  HardDriveDownload,
   ArrowRight,
+  Info,
 } from 'lucide-react';
 import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { useNetworkStatus } from '@/hooks/use-network-status';
@@ -32,7 +31,7 @@ import { toast } from 'sonner';
 
 export default function Downloads() {
   const navigate = useNavigate();
-  const { downloads, isLoading, removeDownload, totalStorageFormatted } = useOfflineDownloads();
+  const { downloads, isLoading, removeDownload, saveToDeviceMemory, totalStorageFormatted } = useOfflineDownloads();
   const { isOffline } = useNetworkStatus();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,6 +63,20 @@ export default function Downloads() {
     }
   };
 
+  const handleExportAll = async () => {
+    const completed = downloads.filter((d) => d.status === 'completed');
+    if (completed.length === 0) {
+      toast.error('No completed downloads to export.');
+      return;
+    }
+    toast.info(`Saving ${completed.length} title(s) to device storage memory...`);
+    for (let i = 0; i < completed.length; i++) {
+      await saveToDeviceMemory(completed[i].id, completed[i].title);
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    toast.success('All downloads exported to device memory!');
+  };
+
   const handlePlayDownload = (item: typeof downloads[0]) => {
     if (item.mediaType === 'geo-movie') {
       navigate(`/${item.countryCode?.toLowerCase() || 'rw'}/movies/${item.id.replace(/^geo-/, '')}`);
@@ -80,7 +93,7 @@ export default function Downloads() {
         keywords={['orangeflix offline', 'download movies', 'watch offline movies']}
       />
 
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className="max-w-[1720px] mx-auto space-y-8">
         {/* Offline Global Alert Header */}
         {isOffline && (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 sm:p-5 flex items-center justify-between gap-4 backdrop-blur-md">
@@ -106,18 +119,18 @@ export default function Downloads() {
           <div>
             <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-orange-400 mb-1">
               <HardDrive className="w-4 h-4" />
-              <span>Offline Device Storage</span>
+              <span>Offline Device Storage & Local Files</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
               My Downloads
             </h1>
-            <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Watch your favorite cinema masterpieces anywhere — on airplanes, travels, or without mobile data.
+            <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
+              Watch your favorite cinema offline or save .MP4 files directly to your device memories to open in VLC, MX Player, or any external media player.
             </p>
           </div>
 
-          {/* Storage & Clear All Actions */}
-          <div className="flex items-center gap-3">
+          {/* Storage & Actions */}
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2 bg-white/[.04] border border-white/[.08] rounded-xl px-3.5 py-2">
               <HardDrive className="w-4 h-4 text-orange-400" />
               <div>
@@ -127,28 +140,47 @@ export default function Downloads() {
             </div>
 
             {downloads.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleClearAll}
-                className="h-10 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 text-xs rounded-xl"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear All
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportAll}
+                  className="h-10 border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs rounded-xl font-bold"
+                >
+                  <HardDriveDownload className="w-3.5 h-3.5 mr-1.5" /> Save All to Device (.MP4)
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearAll}
+                  className="h-10 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 text-xs rounded-xl"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear All
+                </Button>
+              </>
             )}
           </div>
+        </div>
+
+        {/* Helpful Info Tip */}
+        <div className="rounded-2xl border border-white/[.08] bg-white/[.02] p-4 flex items-center gap-3 text-xs text-slate-300">
+          <Info className="w-4 h-4 text-orange-400 shrink-0" />
+          <span>
+            <strong>Device Storage Ready:</strong> Tap <span className="text-orange-400 font-semibold">Save .MP4</span> on any title to save the full video file into your phone or PC memory. You can then open and watch it using VLC, QuickTime, Windows Media Player, MX Player, or your phone's default gallery.
+          </span>
         </div>
 
         {/* Search & Filters Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Search Input */}
-          <div className="relative w-full sm:w-72">
+          <div className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search downloaded titles..."
-              className="pl-9 bg-white/[.04] border-white/10 text-xs rounded-xl text-white placeholder:text-slate-500 h-9"
+              className="pl-9 bg-white/[.04] border-white/10 text-xs rounded-xl text-white placeholder:text-slate-500 h-10"
             />
           </div>
 
@@ -156,24 +188,24 @@ export default function Downloads() {
           <div className="flex items-center gap-1.5 bg-black/40 p-1 rounded-xl border border-white/[.08] w-full sm:w-auto justify-center">
             <button
               onClick={() => setFilterType('all')}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
-                filterType === 'all' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:text-white'
+              className={`text-xs font-semibold px-4 py-2 rounded-lg transition ${
+                filterType === 'all' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               All ({downloads.length})
             </button>
             <button
               onClick={() => setFilterType('movie')}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
-                filterType === 'movie' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:text-white'
+              className={`text-xs font-semibold px-4 py-2 rounded-lg transition ${
+                filterType === 'movie' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               Movies
             </button>
             <button
               onClick={() => setFilterType('tv')}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition ${
-                filterType === 'tv' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:text-white'
+              className={`text-xs font-semibold px-4 py-2 rounded-lg transition ${
+                filterType === 'tv' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
               Series
@@ -197,7 +229,7 @@ export default function Downloads() {
             <h2 className="text-xl font-bold text-white">No Offline Downloads Found</h2>
             <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mt-2 mb-6">
               {downloads.length === 0
-                ? 'You haven’t downloaded any movies or TV series yet. Tap the download icon on any movie or series to watch offline anytime!'
+                ? 'You haven’t downloaded any movies or TV series yet. Tap the download icon on any movie or series to save to your device storage!'
                 : 'No downloaded titles match your filter or search query.'}
             </p>
             <Link to="/movies">
@@ -261,22 +293,34 @@ export default function Downloads() {
                   </div>
 
                   {/* Action Bar */}
-                  <div className="flex items-center justify-between pt-2 border-t border-white/[.06]">
-                    <Button
-                      size="sm"
-                      onClick={() => handlePlayDownload(item)}
-                      className="h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg px-3"
-                    >
-                      <Play className="w-3 h-3 fill-current mr-1" /> Play Offline
-                    </Button>
+                  <div className="space-y-2 pt-2 border-t border-white/[.06]">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => handlePlayDownload(item)}
+                        className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg px-2 shadow-sm"
+                      >
+                        <Play className="w-3 h-3 fill-current mr-1" /> Play Offline
+                      </Button>
 
-                    <button
-                      onClick={() => removeDownload(item.id, item.title)}
-                      className="w-8 h-8 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400 flex items-center justify-center transition"
-                      title="Delete offline download"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => saveToDeviceMemory(item.id, item.title)}
+                        className="h-8 border-white/15 bg-white/[0.04] hover:bg-orange-500/20 hover:border-orange-500/40 text-slate-200 hover:text-white text-xs font-semibold rounded-lg px-2.5"
+                        title="Save .MP4 file to device storage/memory"
+                      >
+                        <HardDriveDownload className="w-3.5 h-3.5 mr-1 text-orange-400" /> Save .MP4
+                      </Button>
+
+                      <button
+                        onClick={() => removeDownload(item.id, item.title)}
+                        className="w-8 h-8 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400 flex items-center justify-center transition shrink-0"
+                        title="Delete from offline storage"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

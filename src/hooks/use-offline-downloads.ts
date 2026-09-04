@@ -40,10 +40,22 @@ export function useOfflineDownloads() {
     countryCode?: string;
     videoUrl?: string;
     youtubeVideoId?: string;
+    saveToDevice?: boolean;
   }) => {
-    toast.info(`Downloading "${params.title}" for offline playback...`);
+    toast.info(`Downloading "${params.title}" & saving to device memory...`);
     await OfflineDownloadService.startDownload(params);
-    toast.success(`"${params.title}" downloaded! Available anytime offline.`);
+    toast.success(`"${params.title}" downloaded and saved to your device memory! Playable offline or in external media players (VLC, MX Player, etc.).`, {
+      duration: 5000,
+    });
+  };
+
+  const saveToDeviceMemory = async (id: string, title?: string) => {
+    const success = await OfflineDownloadService.saveToDeviceMemory(id);
+    if (success) {
+      toast.success(`Exported "${title || 'Media'}.mp4" to device memory! Open in any video player.`);
+    } else {
+      toast.error(`Failed to export "${title || 'Media'}". Try downloading again.`);
+    }
   };
 
   const removeDownload = async (id: string, title?: string) => {
@@ -75,6 +87,7 @@ export function useOfflineDownloads() {
     downloads,
     isLoading,
     startDownload,
+    saveToDeviceMemory,
     removeDownload,
     isDownloaded,
     getDownloadProgress,

@@ -46,11 +46,15 @@ import {
   Play,
   TrendingUp,
   Flame,
+  Download,
+  CheckCircle2,
+  HardDriveDownload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DetailHeroSkeleton, SeriesPlaylistSkeleton } from '@/components/ui/Skeletons';
 import AdvancedCinematicPlayer from '@/components/watch/AdvancedCinematicPlayer';
+import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 
 export default function CountryMovieDetail() {
   const { countryCode: rawCountryCode, slug, id } = useParams<{
@@ -76,6 +80,9 @@ export default function CountryMovieDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
   const [isUnavailable, setIsUnavailable] = useState(false);
+
+  // Offline Downloads state
+  const { startDownload, isDownloaded, getDownloadProgress } = useOfflineDownloads();
 
   // Watchlist & Favorite state
   const rawId = `geo-${lookupKey}`;
@@ -489,6 +496,53 @@ export default function CountryMovieDetail() {
                 >
                   {isCopied ? <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5 mr-1.5" />}
                   {isCopied ? 'Copied!' : t.share}
+                </Button>
+
+                {/* Download and Save to Device Memory (.MP4) */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void startDownload({
+                      id: rawId,
+                      title: movie.title,
+                      mediaType: 'geo-movie',
+                      posterUrl: movie.thumbnail || movie.thumbnailUrl,
+                      backdropUrl: movie.thumbnail || movie.thumbnailUrl,
+                      duration: Math.round((movie.durationSeconds || 0) / 60) || 90,
+                      durationFormatted: movie.durationFormatted,
+                      releaseYear: movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : 2026,
+                      rating: Math.min(5, Number((Number(movie.score || movie.classificationScore || 0) / 20).toFixed(1)) || 4),
+                      genres: [country.name, 'African Cinema'],
+                      country: country.name,
+                      countryCode: countryCode.toLowerCase(),
+                      youtubeVideoId: movie.youtubeVideoId,
+                      saveToDevice: true,
+                    });
+                  }}
+                  disabled={isDownloaded(rawId) || getDownloadProgress(rawId)?.status === 'downloading'}
+                  className={`text-xs h-9 rounded-xl border transition ${
+                    isDownloaded(rawId)
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                      : getDownloadProgress(rawId)?.status === 'downloading'
+                      ? 'border-orange-500/40 bg-orange-500/10 text-orange-400 animate-pulse'
+                      : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
+                  }`}
+                  title="Download and save .MP4 file to device storage/memory"
+                >
+                  {isDownloaded(rawId) ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-400" /> Downloaded (.MP4 Saved)
+                    </>
+                  ) : getDownloadProgress(rawId)?.status === 'downloading' ? (
+                    <>
+                      <Download className="w-3.5 h-3.5 mr-1.5 animate-bounce text-orange-400" /> Saving {getDownloadProgress(rawId)?.progress}%
+                    </>
+                  ) : (
+                    <>
+                      <HardDriveDownload className="w-3.5 h-3.5 mr-1.5 text-orange-400" /> Download & Save (.MP4)
+                    </>
+                  )}
                 </Button>
 
                 <div className="hidden sm:flex items-center gap-2 ml-auto text-[11px] text-slate-400 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-xl">
