@@ -17,6 +17,7 @@ import {
   Volume2,
   Film,
 } from 'lucide-react';
+import { SoundtrackSkeleton } from '@/components/ui/Skeletons';
 import { toast } from 'sonner';
 
 export default function Music() {
@@ -74,6 +75,22 @@ export default function Music() {
       toast.success(`Playing sample: ${track.trackName}`);
     }
   };
+
+  if (loading && featuredAlbums.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#07090e] text-white">
+        <SEOHead
+          title="Movie & TV Soundtracks — Cinema Music Discovery"
+          description="Stream official motion picture soundtracks, score themes, and composer masterworks on OrangeFlix."
+          url="https://orangeflixx.vercel.app/music"
+        />
+        <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+          <Breadcrumbs items={[{ name: 'Music & Soundtracks', url: '/music' }]} />
+          <SoundtrackSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#07090e] text-white">

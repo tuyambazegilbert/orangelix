@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Search, Calendar, Clock, Newspaper, ArrowRight, Sparkles } from 'lucide-react';
+import { NewsSkeleton } from '@/components/ui/Skeletons';
 
 export default function News() {
   const { category: urlCategory } = useParams<{ category?: string }>();
@@ -99,10 +100,7 @@ export default function News() {
         </div>
 
         {loading ? (
-          <div className="text-center py-24 space-y-3 bg-gray-900/40 rounded-3xl border border-white/[0.06]">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto" />
-            <p className="text-xs text-slate-400">Loading cinema headlines & breaking reports...</p>
-          </div>
+          <NewsSkeleton />
         ) : articles.length === 0 ? (
           <div className="text-center py-20 bg-gray-900/40 rounded-3xl border border-gray-800 p-8 space-y-3">
             <Newspaper className="w-12 h-12 text-slate-600 mx-auto" />

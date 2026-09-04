@@ -141,11 +141,16 @@ export default function GeoContentRail({
           Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="w-[240px] sm:w-[270px] md:w-[290px] shrink-0 snap-start rounded-2xl border border-gray-800 bg-gray-900/40 p-3 space-y-3 animate-pulse"
+              className="w-[240px] sm:w-[270px] md:w-[290px] shrink-0 snap-start rounded-2xl border border-white/[.08] bg-white/[.03] p-3 space-y-3 animate-pulse"
             >
-              <div className="aspect-video w-full bg-gray-800/60 rounded-xl" />
-              <div className="h-4 bg-gray-800 rounded w-3/4" />
-              <div className="h-3 bg-gray-800/50 rounded w-1/2" />
+              <div className="aspect-video w-full bg-white/10 rounded-xl" />
+              <div className="space-y-2">
+                <div className="h-3.5 bg-white/20 rounded w-3/4" />
+                <div className="flex justify-between items-center">
+                  <div className="h-2.5 bg-orange-400/20 rounded w-1/3" />
+                  <div className="h-2.5 bg-white/10 rounded w-1/4" />
+                </div>
+              </div>
             </div>
           ))
         ) : (

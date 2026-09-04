@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import SEOHead from '@/components/seo/SEOHead';
 import { OfflineDownloadService } from '@/services/offline-download-service';
+import { DownloadsSkeleton } from '@/components/ui/Skeletons';
 import { toast } from 'sonner';
 
 export default function Downloads() {
@@ -215,11 +216,7 @@ export default function Downloads() {
 
         {/* Downloads Catalog Grid */}
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-pulse">
-            {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="h-64 rounded-2xl bg-white/[.05] border border-white/[.08]" />
-            ))}
-          </div>
+          <DownloadsSkeleton />
         ) : filteredDownloads.length === 0 ? (
           /* Empty State */
           <div className="py-16 text-center rounded-3xl border border-dashed border-white/[.12] bg-white/[.02] p-8">

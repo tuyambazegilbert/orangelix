@@ -16,17 +16,21 @@ import {
   Check,
   ShieldCheck,
 } from 'lucide-react';
+import { PublicProfileSkeleton } from '@/components/ui/Skeletons';
 import { toast } from 'sonner';
 
 export default function PublicProfile() {
   const { username } = useParams<{ username: string }>();
   const [copied, setCopied] = useState(false);
   const [publicFavorites, setPublicFavorites] = useState<(MediaItem | Movie)[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Load sample legacy public titles for demo profile
+    setLoading(true);
     const movies = MovieService.getMovies();
     setPublicFavorites(movies.slice(0, 6));
+    setLoading(false);
   }, [username]);
 
   const handleShare = () => {
@@ -37,6 +41,22 @@ export default function PublicProfile() {
       setTimeout(() => setCopied(false), 2500);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white">
+        <SEOHead
+          title={`${username}'s Cinema Library — OrangeFlix`}
+          description={`Explore ${username}'s favorite movies, TV shows, and curated collections on OrangeFlix.`}
+          type="profile"
+        />
+        <div className="page-wrap py-8">
+          <Breadcrumbs items={[{ name: 'Community', url: '/movies' }, { name: `@${username}`, url: `/u/${username}` }]} />
+          <PublicProfileSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">

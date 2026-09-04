@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Flame,
 } from 'lucide-react';
+import { SoundtrackSkeleton } from '@/components/ui/Skeletons';
 import { toast } from 'sonner';
 
 export default function MovieSoundtrack() {
@@ -303,6 +304,18 @@ export default function MovieSoundtrack() {
     const s = Math.floor(sec % 60);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
+
+  if (isMediaLoading) {
+    return (
+      <div className="min-h-screen bg-[#07090e] text-white">
+        <SEOHead
+          title="Motion Picture Soundtrack & Scores — OrangeFlix"
+          description="Stream authentic score and soundtrack tracks on OrangeFlix."
+        />
+        <SoundtrackSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#07090e] text-white">
@@ -709,9 +722,22 @@ export default function MovieSoundtrack() {
 
             {/* Tracklist High-Density Table / List */}
             {loadingTracks ? (
-              <div className="py-20 text-center space-y-3 bg-gray-900/40 rounded-3xl border border-white/[0.06]">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500 mx-auto" />
-                <p className="text-xs text-slate-400">Loading licensed motion picture master recordings...</p>
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-gray-900/40 border border-white/[0.06] animate-pulse"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-white/10 shrink-0" />
+                      <div className="space-y-1.5">
+                        <div className="h-3.5 w-48 bg-white/20 rounded" />
+                        <div className="h-3 w-28 bg-orange-400/20 rounded" />
+                      </div>
+                    </div>
+                    <div className="h-3 w-12 bg-white/10 rounded" />
+                  </div>
+                ))}
               </div>
             ) : filteredTracks.length === 0 ? (
               <div className="py-16 text-center space-y-3 bg-gray-900/40 rounded-3xl border border-white/[0.06] p-8">

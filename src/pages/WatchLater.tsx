@@ -9,6 +9,7 @@ import { Movie } from '@/types';
 import { MediaItem } from '@/types/media';
 import { POSTER_FALLBACK } from '@/lib/tmdb/images';
 import { toast } from 'sonner';
+import { MovieGridSkeleton } from '@/components/ui/Skeletons';
 
 export default function WatchLater() {
   const { currentUser, isLoading: authLoading } = useAuth();
@@ -83,8 +84,12 @@ export default function WatchLater() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-500 mb-4"></div>
+      <div className="min-h-screen bg-gray-950 text-white page-wrap py-12 space-y-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-8 h-8 rounded-full bg-orange-500/20 animate-pulse" />
+          <div className="h-8 w-48 bg-white/20 rounded-xl animate-pulse" />
+        </div>
+        <MovieGridSkeleton count={12} />
       </div>
     );
   }

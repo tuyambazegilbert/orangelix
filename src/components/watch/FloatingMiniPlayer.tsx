@@ -15,6 +15,7 @@ import {
   RotateCcw,
   RotateCw,
   PictureInPicture,
+  Loader2,
 } from 'lucide-react';
 import { useMiniPlayer } from '@/contexts/MiniPlayerContext';
 import { Badge } from '@/components/ui/badge';
@@ -124,15 +125,19 @@ export default function FloatingMiniPlayer() {
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
         ) : (
-          <div className="w-full h-full grid place-items-center bg-gray-900 text-slate-400 text-xs">
+          <div className="w-full h-full flex flex-col items-center justify-center bg-black/90 text-slate-300 text-xs p-3 text-center relative overflow-hidden">
             {activeSession.poster && (
               <img
                 src={activeSession.poster}
                 alt=""
-                className="absolute inset-0 w-full h-full object-cover opacity-30"
+                className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-sm"
               />
             )}
-            <p className="relative z-10 font-medium">Playing on OrangeFlix</p>
+            <div className="relative z-10 flex flex-col items-center gap-2">
+              <Loader2 className="w-6 h-6 text-orange-400 animate-spin" />
+              <p className="font-semibold text-white text-[11px] drop-shadow">Connecting Stream...</p>
+              <span className="text-[9px] text-slate-400 font-mono">4K HDR Cinema Engine</span>
+            </div>
           </div>
         )}
 

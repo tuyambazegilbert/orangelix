@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   Info,
 } from 'lucide-react';
+import { SearchPageSkeleton } from '@/components/ui/Skeletons';
 
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -272,10 +273,7 @@ export default function Search() {
 
         {/* Search Results Presentation */}
         {isSearching ? (
-          <div className="text-center py-20">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-orange-500 border-t-transparent mx-auto mb-3" />
-            <p className="text-xs text-slate-400">Executing hybrid retrieval & multi-signal ranking...</p>
-          </div>
+          <SearchPageSkeleton />
         ) : !debouncedQuery.trim() ? (
           <div className="text-center py-16 bg-slate-900/30 rounded-3xl border border-white/[.08] p-8 space-y-3 max-w-xl mx-auto">
             <SearchIcon className="w-10 h-10 text-slate-600 mx-auto" />

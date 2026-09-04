@@ -52,34 +52,11 @@ import { POSTER_FALLBACK } from '@/lib/tmdb/images';
 import { getCanonicalMediaId, partitionRails } from '@/lib/deduplication';
 import MediaReviewsSection from '@/components/reviews/MediaReviewsSection';
 import { WhereToWatchProviders } from '@/components/watch/WhereToWatchProviders';
+import { WatchPageSkeleton } from '@/components/ui/Skeletons';
 
 const duration = (minutes: number | null | undefined) =>
   minutes ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : '—';
 const progressKey = (id: string) => `orangeflix_progress_${id}`;
-
-function WatchSkeleton() {
-  return (
-    <main className="max-w-[1720px] mx-auto px-3 sm:px-5 lg:px-8 pt-3 sm:pt-4 space-y-4 animate-pulse">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 xl:gap-8">
-        <div className="lg:col-span-8 space-y-4">
-          <div className="aspect-video w-full rounded-2xl bg-white/10 border border-white/10" />
-          <div className="h-8 w-2/3 bg-white/20 rounded-xl" />
-          <div className="flex gap-2">
-            <div className="h-5 w-20 bg-orange-500/20 rounded" />
-            <div className="h-5 w-16 bg-white/10 rounded" />
-            <div className="h-5 w-24 bg-white/10 rounded" />
-          </div>
-        </div>
-        <div className="lg:col-span-4 space-y-3">
-          <div className="h-6 w-1/3 bg-white/20 rounded" />
-          <div className="h-20 w-full bg-white/10 rounded-xl" />
-          <div className="h-20 w-full bg-white/10 rounded-xl" />
-          <div className="h-20 w-full bg-white/10 rounded-xl" />
-        </div>
-      </div>
-    </main>
-  );
-}
 
 export default function Watch() {
   const { id = '' } = useParams<{ id: string }>();
@@ -390,7 +367,7 @@ export default function Watch() {
     }
   };
 
-  if (movie.isLoading || series.isLoading) return <WatchSkeleton />;
+  if (movie.isLoading || series.isLoading) return <WatchPageSkeleton />;
   if (!media)
     return (
       <main className="page-wrap grid min-h-[65vh] place-items-center text-center">

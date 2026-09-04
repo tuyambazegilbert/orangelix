@@ -36,10 +36,10 @@
   .premium-button { background: linear-gradient(105deg, #ff9d2f, #f26b1d); color: white; border: 0; box-shadow: 0 8px 22px rgba(242, 107, 29, .22); }
   .premium-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
   .content-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 1rem; }
-  .skeleton { background: linear-gradient(100deg, #121b2b 30%, #202c40 50%, #121b2b 70%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  .skeleton { background: linear-gradient(105deg, #0d1322 20%, #1d273c 50%, #0d1322 80%); background-size: 200% 100%; animation: shimmer 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 }
 
-@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 .rise { animation: rise .45s ease both; }
 .scrollbar-hide,

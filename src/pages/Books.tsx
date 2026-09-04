@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Bookmark,
 } from 'lucide-react';
+import { BooksSkeleton } from '@/components/ui/Skeletons';
 import { toast } from 'sonner';
 
 export default function Books() {
@@ -40,6 +41,22 @@ export default function Books() {
     setSearchResults(res);
     setLoading(false);
   };
+
+  if (loading && featuredBooks.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#07090e] text-white">
+        <SEOHead
+          title="Books & Literary Source Material — Page to Screen"
+          description="Discover the books, novels, and biographies that inspired cinema masterworks on OrangeFlix."
+          url="https://orangeflixx.vercel.app/books"
+        />
+        <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+          <Breadcrumbs items={[{ name: 'Books & Literary Adaptations', url: '/books' }]} />
+          <BooksSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#07090e] text-white">

@@ -13,6 +13,7 @@ import {
   Flame,
   Film,
 } from 'lucide-react';
+import { MovieGridSkeleton } from '@/components/ui/Skeletons';
 
 interface CollectionMeta {
   title: string;
@@ -60,6 +61,8 @@ export default function Collections() {
 
   const trending = useTrending('all', 'week');
   const topRated = useTopRatedMovies(1);
+
+  const isLoading = normalizedSlug === 'award-winners' ? topRated.isLoading : trending.isLoading;
 
   const items = normalizedSlug === 'award-winners'
     ? (topRated.data?.items || [])
@@ -118,11 +121,15 @@ export default function Collections() {
         </div>
 
         {/* Media Grid */}
-        <div className="content-grid">
-          {items.map((media) => (
-            <MovieCard key={media.id} movie={media} />
-          ))}
-        </div>
+        {isLoading ? (
+          <MovieGridSkeleton count={12} />
+        ) : (
+          <div className="content-grid">
+            {items.map((media) => (
+              <MovieCard key={media.id} movie={media} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

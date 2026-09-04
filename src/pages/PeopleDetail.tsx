@@ -17,6 +17,7 @@ import {
   Tv,
 } from 'lucide-react';
 import { PROFILE_FALLBACK } from '@/lib/tmdb/images';
+import { PeopleDetailSkeleton } from '@/components/ui/Skeletons';
 
 export default function PeopleDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,9 +26,8 @@ export default function PeopleDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mb-3" />
-        <p className="text-xs text-slate-400">Loading artist profile...</p>
+      <div className="min-h-screen bg-gray-950 text-white">
+        <PeopleDetailSkeleton />
       </div>
     );
   }

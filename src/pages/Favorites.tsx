@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Heart, Film } from 'lucide-react';
 import { MediaItem } from '@/types/media';
 import { Movie } from '@/types';
+import { MovieGridSkeleton } from '@/components/ui/Skeletons';
 
 export default function Favorites() {
   const { currentUser, isLoading } = useAuth();
@@ -41,13 +42,12 @@ export default function Favorites() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white page-wrap py-12">
-        <div className="h-8 w-48 bg-white/[.08] rounded animate-pulse mb-8" />
-        <div className="content-grid">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="aspect-[2/3] rounded-xl bg-white/[.05] animate-pulse" />
-          ))}
+      <div className="min-h-screen bg-gray-950 text-white page-wrap py-12 space-y-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-8 h-8 rounded-full bg-red-500/20 animate-pulse" />
+          <div className="h-8 w-48 bg-white/20 rounded-xl animate-pulse" />
         </div>
+        <MovieGridSkeleton count={12} />
       </div>
     );
   }

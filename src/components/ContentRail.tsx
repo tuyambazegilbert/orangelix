@@ -105,11 +105,20 @@ export default function ContentRail({
           ? Array.from({ length: 8 }).map((_, i) => (
               <div
                 key={i}
-                className={`skeleton shrink-0 rounded-xl ${
-                  variant === 'continue' ? 'w-[260px] aspect-[1.75/1]' : 'w-[155px] sm:w-[180px]'
+                className={`shrink-0 rounded-2xl bg-white/5 border border-white/10 overflow-hidden animate-pulse ${
+                  variant === 'continue' ? 'w-[260px] aspect-[1.75/1]' : 'w-[155px] sm:w-[180px] xl:w-[200px]'
                 }`}
-                style={variant === 'poster' ? { aspectRatio: '2 / 3.65' } : undefined}
-              />
+                style={variant === 'poster' ? { aspectRatio: '2 / 3.3' } : undefined}
+              >
+                <div className="h-3/4 w-full bg-white/10" />
+                <div className="p-3 space-y-2">
+                  <div className="h-3.5 w-4/5 bg-white/20 rounded" />
+                  <div className="flex justify-between items-center">
+                    <div className="h-2.5 w-1/3 bg-orange-400/20 rounded" />
+                    <div className="h-2.5 w-1/4 bg-white/20 rounded" />
+                  </div>
+                </div>
+              </div>
             ))
           : displayItems.map((item, index) =>
               variant === 'continue' ? (

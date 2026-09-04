@@ -174,15 +174,40 @@ export default function AdvancedCinematicPlayer({
   // Sleep Timer
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
 
+  // Loading & Stream Waiting States
+  const [isBuffering, setIsBuffering] = useState(true);
+  const [loadingDurationSeconds, setLoadingDurationSeconds] = useState(0);
+
   // Engine Setup
   const [ytApiReady, setYtApiReady] = useState(false);
   const [activeEngine, setActiveEngine] = useState<'html5' | 'youtube'>('html5');
 
   const effectiveYoutubeId = youtubeVideoId || trailerKey || null;
   const isYoutubeSource = Boolean(!videoUrl && effectiveYoutubeId);
+  const isWaitingForSource = Boolean(!videoUrl && !effectiveYoutubeId && !isOffline);
+  const showLoadingOverlay = isWaitingForSource || isBuffering;
 
   const alreadyDownloaded = isDownloaded(id);
   const downloadState = getDownloadProgress(id);
+
+  // Loading timer for informative fallback actions
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval>;
+    if (showLoadingOverlay) {
+      timer = setInterval(() => {
+        setLoadingDurationSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setLoadingDurationSeconds(0);
+    }
+    return () => clearInterval(timer);
+  }, [showLoadingOverlay]);
+
+  // Reset buffering on source changes
+  useEffect(() => {
+    setIsBuffering(true);
+    setLoadingDurationSeconds(0);
+  }, [videoUrl, effectiveYoutubeId]);
 
   // 1. Initialize Engine
   useEffect(() => {
@@ -283,17 +308,26 @@ export default function AdvancedCinematicPlayer({
             // Autoplay immediately on player ready
             event.target.playVideo?.();
             setIsPlaying(true);
+            setIsBuffering(false);
             setHasStartedPlayback(true);
           },
           onStateChange: (event) => {
+            // 1: PLAYING, 2: PAUSED, 3: BUFFERING, -1: UNSTARTED, 0: ENDED, 5: CUED
             if (event.data === 1) {
               setIsPlaying(true);
+              setIsBuffering(false);
               setHasStartedPlayback(true);
-            }
-            if (event.data === 2) setIsPlaying(false);
-            if (event.data === 0) {
+            } else if (event.data === 2) {
               setIsPlaying(false);
+              setIsBuffering(false);
+            } else if (event.data === 3 || event.data === -1) {
+              setIsBuffering(true);
+            } else if (event.data === 0) {
+              setIsPlaying(false);
+              setIsBuffering(false);
               onEnded?.();
+            } else if (event.data === 5) {
+              setIsBuffering(false);
             }
           },
         },
@@ -646,13 +680,15 @@ export default function AdvancedCinematicPlayer({
       {/* 2. Master Cinema Player Container */}
       <div
         ref={containerRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onMouseMove={() => !isScreenLocked && setControlsVisible(true)}
-        onMouseLeave={() => isPlaying && !isScreenLocked && setControlsVisible(false)}
+        onTouchStart={!showLoadingOverlay ? handleTouchStart : undefined}
+        onTouchMove={!showLoadingOverlay ? handleTouchMove : undefined}
+        onTouchEnd={!showLoadingOverlay ? handleTouchEnd : undefined}
+        onMouseMove={() => !isScreenLocked && !showLoadingOverlay && setControlsVisible(true)}
+        onMouseLeave={() => isPlaying && !isScreenLocked && !showLoadingOverlay && setControlsVisible(false)}
         style={{ aspectRatio: '16 / 9' }}
-        className={`group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/15 bg-black shadow-[0_25px_70px_rgba(0,0,0,0.85)] w-full select-none ${
+        className={`relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/15 bg-black shadow-[0_25px_70px_rgba(0,0,0,0.85)] w-full select-none ${
+          !showLoadingOverlay ? 'group' : ''
+        } ${
           isFullscreen ? 'rounded-none border-none min-h-screen max-h-screen' : 'max-h-[calc(100vh-210px)]'
         }`}
       >
@@ -675,14 +711,30 @@ export default function AdvancedCinematicPlayer({
                   : aspectRatioMode === 'fill'
                   ? 'object-fill'
                   : 'object-contain'
-              } cursor-pointer`}
-              onClick={togglePlay}
-              onPlay={() => setIsPlaying(true)}
+              } ${!showLoadingOverlay ? 'cursor-pointer' : 'cursor-default'}`}
+              onClick={!showLoadingOverlay ? togglePlay : undefined}
+              onPlay={() => {
+                setIsPlaying(true);
+                setIsBuffering(false);
+              }}
+              onPlaying={() => {
+                setIsPlaying(true);
+                setIsBuffering(false);
+              }}
               onPause={() => setIsPlaying(false)}
+              onWaiting={() => setIsBuffering(true)}
+              onLoadStart={() => setIsBuffering(true)}
+              onLoadedData={() => setIsBuffering(false)}
+              onCanPlay={() => setIsBuffering(false)}
+              onCanPlayThrough={() => setIsBuffering(false)}
+              onSeeking={() => setIsBuffering(true)}
+              onSeeked={() => setIsBuffering(false)}
+              onStalled={() => setIsBuffering(true)}
               onTimeUpdate={(e) => {
                 const node = e.currentTarget;
                 setCurrentTime(node.currentTime);
                 if (node.duration) setDuration(node.duration);
+                if (node.currentTime > 0) setIsBuffering(false);
                 if (Math.floor(node.currentTime) % 10 === 0) {
                   onProgress?.(node.currentTime, node.duration);
                 }
@@ -696,6 +748,7 @@ export default function AdvancedCinematicPlayer({
               }}
               onEnded={() => {
                 setIsPlaying(false);
+                setIsBuffering(false);
                 onEnded?.();
               }}
             />
@@ -720,8 +773,8 @@ export default function AdvancedCinematicPlayer({
               )}
               {/* Click / Tap Interceptor */}
               <div
-                className="absolute inset-0 z-10 cursor-pointer pointer-events-auto"
-                onClick={togglePlay}
+                className={`absolute inset-0 z-10 ${!showLoadingOverlay ? 'cursor-pointer pointer-events-auto' : 'pointer-events-none'}`}
+                onClick={!showLoadingOverlay ? togglePlay : undefined}
               />
             </div>
           )}
@@ -729,8 +782,8 @@ export default function AdvancedCinematicPlayer({
 
         {/* 3. Official OrangeFlix Logo & Brand Watermark Overlay */}
         <div
-          className={`absolute top-3 right-3 sm:top-5 sm:right-6 z-20 pointer-events-none flex items-center gap-1.5 transition-opacity duration-200 ${
-            controlsVisible ? 'opacity-0 sm:opacity-80' : 'opacity-80'
+          className={`absolute top-3 right-3 sm:top-5 sm:right-6 z-20 pointer-events-none flex items-center gap-1.5 transition-opacity duration-300 ${
+            !showLoadingOverlay ? (controlsVisible ? 'opacity-0 sm:opacity-80' : 'opacity-80') : 'opacity-0'
           }`}
         >
           <img
@@ -747,7 +800,7 @@ export default function AdvancedCinematicPlayer({
         </div>
 
         {/* 4. Gesture HUD Overlays (Volume, Brightness & Seek Ripples) */}
-        {gestureHUD.type && (
+        {gestureHUD.type && !showLoadingOverlay && (
           <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
             {gestureHUD.type === 'volume' && (
               <div className="flex flex-col items-center gap-2 bg-black/80 backdrop-blur-xl border border-white/20 px-6 py-4 rounded-2xl animate-in zoom-in-90 duration-150">
@@ -777,22 +830,24 @@ export default function AdvancedCinematicPlayer({
         )}
 
         {/* 5. Screen Lock Overlay Icon */}
-        <button
-          onClick={() => setIsScreenLocked(!isScreenLocked)}
-          className={`absolute left-3 sm:left-4 top-14 sm:top-20 z-30 w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition ${
-            isScreenLocked
-              ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/50'
-              : 'bg-black/50 text-slate-400 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100'
-          }`}
-          title={isScreenLocked ? 'Unlock Screen Controls' : 'Lock Screen Controls'}
-        >
-          {isScreenLocked ? <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Unlock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-        </button>
+        {!showLoadingOverlay && (
+          <button
+            onClick={() => setIsScreenLocked(!isScreenLocked)}
+            className={`absolute left-3 sm:left-4 top-14 sm:top-20 z-30 w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition ${
+              isScreenLocked
+                ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/50'
+                : 'bg-black/50 text-slate-400 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100'
+            }`}
+            title={isScreenLocked ? 'Unlock Screen Controls' : 'Lock Screen Controls'}
+          >
+            {isScreenLocked ? <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Unlock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+          </button>
+        )}
 
         {/* 6. Top Floating Glassmorphism Title Bar */}
         <div
           className={`absolute inset-x-0 top-0 z-30 px-3 py-2 sm:p-5 bg-gradient-to-b from-black/90 via-black/50 to-transparent flex items-center justify-between gap-2 transition-opacity duration-300 ${
-            controlsVisible && !isScreenLocked ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            controlsVisible && !isScreenLocked && !showLoadingOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
         >
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
@@ -837,7 +892,7 @@ export default function AdvancedCinematicPlayer({
         </div>
 
         {/* 7. Center Cinema Controls Cluster (-10s, Play/Pause, +10s) */}
-        {!isScreenLocked && (
+        {!isScreenLocked && !showLoadingOverlay && (
           <div
             className={`absolute inset-0 z-20 flex items-center justify-center gap-6 sm:gap-12 pointer-events-none transition-all duration-200 ${
               controlsVisible ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
@@ -892,7 +947,7 @@ export default function AdvancedCinematicPlayer({
         {/* 8. Custom Bottom Deck Controls Bar (Clean & Responsive) */}
         <div
           className={`absolute inset-x-0 bottom-0 z-30 px-2.5 sm:px-5 pb-2 sm:pb-3.5 pt-6 sm:pt-12 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-opacity duration-300 ${
-            controlsVisible && !isScreenLocked ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            controlsVisible && !isScreenLocked && !showLoadingOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
         >
           {/* Progress Timeline Scrubber */}
@@ -1336,6 +1391,85 @@ export default function AdvancedCinematicPlayer({
               </button>
             </div>
           </div>
+        </div>
+
+        {/* 9. Master Cinema Stream Loading & Buffering Animation Overlay (Topmost Layer z-50) */}
+        <div
+          className={`absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-md transition-all duration-500 ease-out select-none p-4 text-center ${
+            showLoadingOverlay
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none'
+          }`}
+          aria-hidden={!showLoadingOverlay}
+        >
+          {/* Ambient Background Glow Effect */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {(backdropUrl || poster) && (
+              <img
+                src={backdropUrl || poster || ''}
+                alt=""
+                className="w-full h-full object-cover opacity-25 filter blur-xl scale-110"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/60" />
+          </div>
+
+          {/* Central Animated Core Loader */}
+          <div className="relative flex items-center justify-center mb-4 z-10">
+            {/* Outer Pulsing Glow Aura */}
+            <div className="absolute w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-orange-500/20 blur-xl animate-pulse" />
+
+            {/* Outer Rotating Gradient Ring */}
+            <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-full border-2 border-transparent border-t-orange-500 border-r-amber-400 animate-spin" />
+
+            {/* Middle Reverse Ring */}
+            <div
+              className="absolute w-12 h-12 sm:w-15 sm:h-15 rounded-full border-2 border-transparent border-b-orange-400 border-l-amber-300 animate-spin"
+              style={{ animationDirection: 'reverse', animationDuration: '1.2s' }}
+            />
+
+            {/* Center Glowing Emblem */}
+            <div className="absolute w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white shadow-[0_0_25px_rgba(249,115,22,0.9)] animate-pulse">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            </div>
+          </div>
+
+          {/* Shimmering Equalizer / Data Stream Waves */}
+          <div className="flex items-center justify-center gap-1.5 h-4 sm:h-5 mb-3 z-10">
+            {[0.4, 0.9, 0.6, 1.0, 0.5, 0.8, 0.3].map((h, i) => (
+              <span
+                key={i}
+                className="w-1 bg-gradient-to-t from-orange-500 to-amber-300 rounded-full animate-pulse"
+                style={{
+                  height: `${h * 100}%`,
+                  animationDelay: `${i * 120}ms`,
+                  animationDuration: '800ms',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Fallback Action after 8s if network is slow */}
+          {loadingDurationSeconds >= 8 && (
+            <div className="relative z-10 mt-3 flex items-center gap-2 animate-in fade-in zoom-in duration-300">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setLoadingDurationSeconds(0);
+                  if (videoRef.current) {
+                    videoRef.current.load();
+                    void videoRef.current.play().catch(() => {});
+                  } else if (ytPlayerRef.current?.playVideo) {
+                    ytPlayerRef.current.playVideo();
+                  }
+                }}
+                className="h-7 px-3 text-[10px] rounded-lg border-orange-500/40 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20"
+              >
+                <RotateCcw className="w-3 h-3 mr-1" /> Reload Stream
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

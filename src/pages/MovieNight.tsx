@@ -20,6 +20,7 @@ import {
   Film,
   Tv,
 } from 'lucide-react';
+import { MovieGridSkeleton } from '@/components/ui/Skeletons';
 import { toast } from 'sonner';
 
 export default function MovieNight() {
@@ -57,6 +58,7 @@ export default function MovieNight() {
     page: 1,
   });
 
+  const isLoading = trending.isLoading || discover.isLoading;
   const allItems = [...(trending.data?.items || []), ...(discover.data?.items || [])];
 
   // Filter items based on active filter
@@ -98,53 +100,42 @@ export default function MovieNight() {
 
         {/* Hero Atmosphere Banner */}
         <section className="relative overflow-hidden rounded-3xl border border-white/[.08] bg-gradient-to-br from-[#101728] via-[#090e1a] to-[#150e20] p-6 sm:p-10 mb-10 shadow-2xl">
-          <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-orange-500/10 blur-3xl" />
-          <div className="pointer-events-none absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-violet-600/10 blur-3xl" />
-
-          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="space-y-3 max-w-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs font-semibold">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="space-y-3 max-w-xl text-center md:text-left">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-semibold">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Atmospheric Entertainment Intelligence</span>
+                <span>Atmospheric Cinema Matchmaker</span>
               </div>
-              <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
-                Tonight in <span className="text-orange-400">{weather?.city || city}</span>
+              <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
+                Tonight's Feature in <span className="text-orange-400">{city}</span>
               </h1>
               <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                {loadingWeather
-                  ? 'Analyzing atmospheric conditions...'
-                  : weather?.moodDescription}
+                {weather?.moodDescription || 'Cinematic storytelling handpicked for current atmospheric conditions and evening vibes.'}
               </p>
             </div>
 
-            {/* Live Weather Card */}
-            <div className="bg-gray-900/80 border border-white/[.1] rounded-2xl p-5 backdrop-blur-md flex items-center gap-4 shrink-0 shadow-lg">
-              <div className="grid place-items-center w-14 h-14 rounded-xl bg-white/[.05] border border-white/[.08]">
-                {getWeatherIcon(weather?.weatherCode)}
-              </div>
+            {/* Weather Card */}
+            <div className="rounded-2xl border border-white/10 bg-black/40 p-5 flex items-center gap-4 shrink-0 backdrop-blur-md min-w-[240px]">
+              {getWeatherIcon(weather?.weatherCode)}
               <div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-white">{weather?.temperature ?? 22}°C</span>
-                  <span className="text-xs font-medium text-orange-400">{weather?.conditionText}</span>
-                </div>
-                <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                  <span>{weather?.city}, {weather?.country}</span>
+                <div className="text-2xl font-black text-white">{weather?.temperature ?? 22}°C</div>
+                <div className="text-xs text-orange-400 font-semibold">{weather?.conditionText}</div>
+                <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3 h-3" /> {city}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* City Change Search */}
-          <form onSubmit={handleCitySearch} className="relative mt-8 flex max-w-md items-center gap-2">
+          <form onSubmit={handleCitySearch} className="mt-6 flex max-w-sm items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <Input
                 type="text"
-                placeholder="Check another city (e.g. Kigali, London, Paris, Tokyo)..."
+                placeholder="Change city (e.g. Paris, London, Nairobi)..."
                 value={searchCity}
                 onChange={(e) => setSearchCity(e.target.value)}
-                className="pl-9 bg-black/40 border-white/10 text-xs text-white placeholder:text-slate-500 rounded-xl h-10"
+                className="pl-9 bg-black/50 border-white/10 text-xs rounded-xl h-10 text-white placeholder:text-slate-500"
               />
             </div>
             <Button type="submit" size="sm" className="bg-orange-500 hover:bg-orange-600 rounded-xl h-10 px-4">
@@ -199,11 +190,15 @@ export default function MovieNight() {
         </div>
 
         {/* Media Grid */}
-        <div className="content-grid">
-          {filteredItems.map((media) => (
-            <MovieCard key={media.id} movie={media} />
-          ))}
-        </div>
+        {isLoading ? (
+          <MovieGridSkeleton count={16} />
+        ) : (
+          <div className="content-grid">
+            {filteredItems.map((media) => (
+              <MovieCard key={media.id} movie={media} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
