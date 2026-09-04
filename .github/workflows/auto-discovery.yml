@@ -1,4 +1,4 @@
-name: 3x-Weekly YouTube Cinema Auto-Discovery
+name: 3x-Weekly YouTube Cinema Auto-Discovery V2
 
 on:
   schedule:
@@ -6,33 +6,54 @@ on:
     - cron: '0 4 * * 1,3,5'
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
+concurrency:
+  group: youtube-discovery-production
+  cancel-in-progress: false
+
 jobs:
   auto-discovery:
+    name: Execute Discovery V2 Multi-Country Pipeline
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm ci --prefer-offline
 
-      - name: Run 3x-Weekly Cinema Discovery Scanner
-        env:
-          VITE_YOUTUBE_API_KEY: ${{ secrets.VITE_YOUTUBE_API_KEY || secrets.YOUTUBE_API_KEY }}
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+      - name: Preflight Verification
         run: |
-          node scripts/auto-discovery-cron.mjs
+          echo "🔍 Checking Discovery V2 production runner existence..."
+          if [ ! -f "scripts/discovery-v2.mjs" ]; then
+            echo "❌ Error: Canonical Discovery V2 runner is missing at scripts/discovery-v2.mjs"
+            exit 1
+          fi
+          echo "✓ scripts/discovery-v2.mjs exists and is ready for execution."
 
-      - name: Upload Discovery Logs
+      - name: Run Discovery V2 Multi-Territory Engine
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY || secrets.VITE_YOUTUBE_API_KEY }}
+          VITE_YOUTUBE_API_KEY: ${{ secrets.VITE_YOUTUBE_API_KEY || secrets.YOUTUBE_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID || secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          npm run discovery:v2
+
+      - name: Upload Discovery Logs Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: auto-discovery-logs
-          path: logs/auto-discovery-last-run.json
+          name: discovery-v2-execution-logs
+          path: |
+            logs/discovery-v2-last-run.json
+            logs/auto-discovery-last-run.json
           if-no-files-found: ignore
-

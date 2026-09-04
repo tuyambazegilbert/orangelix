@@ -9,6 +9,7 @@ import SEOHead from '@/components/seo/SEOHead';
 import Breadcrumbs from '@/components/Breadcrumbs';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { HeroSkeleton, MovieGridSkeleton } from '@/components/ui/Skeletons';
 import {
   Film,
   Sparkles,

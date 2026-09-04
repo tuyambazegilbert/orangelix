@@ -668,3 +668,33 @@ export interface ScoringConfig {
   // Scoring version
   VERSION: string;
 }
+
+// ============================================================================
+// REAL-TIME EVENT STREAMING TYPES
+// ============================================================================
+
+export interface DiscoveryProgressEvent {
+  id: string;
+  timestamp: Date;
+  level: 'info' | 'success' | 'warning' | 'error';
+  stage:
+    | 'init'
+    | 'channel_scan'
+    | 'series_expansion'
+    | 'query_dispatch'
+    | 'candidate_fetch'
+    | 'classification'
+    | 'gated'
+    | 'publication'
+    | 'complete'
+    | 'error';
+  message: string;
+  countryCode?: string;
+  query?: string;
+  videoId?: string;
+  videoTitle?: string;
+  score?: number;
+  contentType?: string;
+  status?: string;
+  details?: Record<string, unknown>;
+}

@@ -20,7 +20,7 @@ type StoredContent =
   | Pick<Movie, 'id' | 'title' | 'imageUrl' | 'releaseYear' | 'rating' | 'type'>;
 
 const ADMIN_EMAILS = new Set(
-  (import.meta.env.VITE_ADMIN_EMAILS ?? 'admin@orangeflix.com')
+  (import.meta.env.VITE_ADMIN_EMAILS ?? 'admin@orangeflix.com,orangeflix.service@gmail.com')
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)
@@ -269,7 +269,10 @@ export const FirebaseData = {
         };
       });
     } catch (err) {
-      console.warn('Firestore getAllUsers error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Missing or insufficient permissions') && !msg.includes('permission-denied')) {
+        console.warn('Firestore getAllUsers error:', err);
+      }
       return [];
     }
   },
@@ -577,9 +580,9 @@ export const FirebaseData = {
 
     try {
       const [usersSnap, moviesSnap, reviewsSnap] = await Promise.all([
-        getDocs(collection(firestore, 'users')),
-        getDocs(collection(firestore, 'customMedia')),
-        getDocs(collection(firestore, 'reviews')),
+        getDocs(collection(firestore, 'users')).catch(() => ({ size: 0 })),
+        getDocs(collection(firestore, 'customMedia')).catch(() => ({ size: 0 })),
+        getDocs(collection(firestore, 'reviews')).catch(() => ({ size: 0 })),
       ]);
 
       return {
@@ -590,8 +593,7 @@ export const FirebaseData = {
         firebaseConnected: true,
         tmdbConnected: true,
       };
-    } catch (err) {
-      console.warn('Failed to compute live Firestore stats:', err);
+    } catch {
       return defaultStats;
     }
   },

@@ -5,7 +5,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint --quiet ./src",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "discovery:v2": "node scripts/discovery-v2.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

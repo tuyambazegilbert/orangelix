@@ -262,7 +262,9 @@ export default function Admin() {
       if (firestore) {
         allUsers = await FirebaseData.getAllUsers();
       }
-      if (allUsers.length === 0 && currentUser) {
+      if (currentUser && !allUsers.some((u) => u.id === currentUser.id)) {
+        allUsers = [currentUser, ...allUsers];
+      } else if (allUsers.length === 0 && currentUser) {
         allUsers = [currentUser];
       }
       setUsers(allUsers);
@@ -289,9 +291,9 @@ export default function Admin() {
 
       setStats({
         ...platformStats,
-        totalUsers: allUsers.length,
+        totalUsers: Math.max(allUsers.length, platformStats.totalUsers || 0),
         totalMovies: combinedMovies.length,
-        totalReviews: allReviews.length,
+        totalReviews: Math.max(allReviews.length, platformStats.totalReviews || 0),
       });
       setGeoDiscoveryStats({
         totalDiscovered: discoverySnapshot.totalDiscovered,
@@ -307,8 +309,10 @@ export default function Admin() {
   };
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (!authLoading && currentUser?.isAdmin) {
+      void loadDashboardData();
+    }
+  }, [authLoading, currentUser]);
 
   // Admin access guard (allows user if currentUser is admin OR in dev testing)
   if (authLoading) {

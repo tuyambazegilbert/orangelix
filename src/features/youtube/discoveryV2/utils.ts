@@ -489,3 +489,20 @@ export function durationClassification(seconds: number): 'short' | 'medium' | 'l
   if (seconds < 60 * 60) return 'long'; // 30–60 min
   return 'feature'; // > 60 min
 }
+
+/**
+ * Universal Firestore document sanitizer
+ * Recursively removes any keys with `undefined` values so Firestore setDoc never throws Unsupported field value: undefined.
+ */
+export function sanitizeFirestoreDoc<T extends Record<string, unknown>>(data: T): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      result[key] = sanitizeFirestoreDoc(value as Record<string, unknown>);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}

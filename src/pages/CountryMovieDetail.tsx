@@ -15,6 +15,7 @@ import CountryMovieCard from '@/components/geo/CountryMovieCard';
 import SEOHead from '@/components/seo/SEOHead';
 import Breadcrumbs from '@/components/Breadcrumbs';
 import { useAuth } from '@/contexts/AuthContext';
+import { FirebaseData } from '@/lib/firebase-data';
 import { Analytics } from '@/services/analytics';
 import { MovieService } from '@/lib/movies';
 import { Review } from '@/types';
@@ -299,7 +300,7 @@ export default function CountryMovieDetail() {
     : '4.8';
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-white">
+    <div className="min-h-screen pb-16 bg-[#070b14] text-white">
       <SEOHead
         title={`${movie.title} — Watch Online (${country.name} Cinema)`}
         description={movie.description || `Stream ${movie.title} from ${country.name} directly on OrangeFlix.`}
@@ -307,39 +308,41 @@ export default function CountryMovieDetail() {
         image={movie.thumbnail || movie.thumbnailUrl}
       />
 
-      <Breadcrumbs
-        items={[
-          { name: `${country.name} Cinema`, url: `/${countryCode.toLowerCase()}/movies` },
-          { name: movie.title, url: `/${countryCode.toLowerCase()}/movies/${movie.slug}` },
-        ]}
-      />
-
-      <div className="page-wrap !pt-2 sm:!pt-4 max-w-6xl mx-auto px-3 sm:px-6 space-y-4 sm:space-y-6">
-        {/* Navigation & Country Location Switcher */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate(-1)}
-            className="text-xs text-gray-400 hover:text-white self-start"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
-          </Button>
+      <div className="max-w-[1720px] mx-auto px-3 sm:px-5 lg:px-8 pt-3 sm:pt-4">
+        {/* Navigation & Cinema Location Switcher */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="text-xs text-slate-400 hover:text-white px-2 h-8"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
+            </Button>
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <Link to={`/${countryCode.toLowerCase()}/movies`} className="hover:text-orange-400 font-semibold">
+                {country.name} Cinema
+              </Link>
+              <span>/</span>
+              <span className="text-white truncate max-w-[200px] sm:max-w-none">{movie.title}</span>
+            </div>
+          </div>
 
           {/* Quick Territory Switcher */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 flex items-center gap-1">
-              <Globe className="w-3 h-3 text-orange-400" /> Switch Cinema:
+            <span className="text-xs text-slate-400 flex items-center gap-1">
+              <Globe className="w-3.5 h-3.5 text-orange-400" /> Switch Cinema:
             </span>
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-[260px] sm:max-w-none scrollbar-none">
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-[280px] sm:max-w-none scrollbar-none">
               {allCountries.map((c) => (
                 <button
                   key={c.countryCode}
                   onClick={() => navigate(`/${c.countryCode.toLowerCase()}/movies`)}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold shrink-0 transition ${
+                  className={`px-2 py-0.5 rounded-lg text-xs font-semibold shrink-0 transition ${
                     c.countryCode.toUpperCase() === countryCode
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-900 text-gray-400 hover:text-white border border-gray-800'
+                      ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/30'
+                      : 'bg-white/5 text-slate-400 hover:text-white border border-white/10'
                   }`}
                 >
                   {c.flagEmoji} {c.countryCode}
@@ -349,91 +352,82 @@ export default function CountryMovieDetail() {
           </div>
         </div>
 
-        {/* Advanced Cinema Player (Custom Bespoke Controls & Offline Support) */}
-        <section className="w-full">
-          <AdvancedCinematicPlayer
-            id={`geo-${movie.id || movie.youtubeVideoId}`}
-            title={movie.title}
-            poster={movie.thumbnail || movie.thumbnailUrl}
-            backdropUrl={movie.thumbnail || movie.thumbnailUrl}
-            youtubeVideoId={movie.youtubeVideoId}
-            country={country.name}
-            durationMinutes={Math.round((movie.durationSeconds || 0) / 60) || 90}
-            onProgress={(seconds, duration) => {
-              const mid = `geo-${movie.id || movie.youtubeVideoId}`;
-              localStorage.setItem(`orangeflix_progress_${mid}`, String(Math.floor(seconds)));
-              if (currentUser) {
-                const genreArray = (movie.tags || []).slice(0, 3);
-                const primaryGenre = genreArray.length > 0 ? genreArray[0] : 'Regional Cinema';
-                
-                void FirebaseData.setHistory(
-                  currentUser.id,
-                  {
-                    id: movie.id || movie.youtubeVideoId,
-                    tmdbId: 0,
-                    mediaType: 'movie',
-                    title: movie.title,
-                    description: movie.description || `From ${country.name}`,
-                    posterUrl: movie.thumbnail || movie.thumbnailUrl,
-                    backdropUrl: movie.thumbnail || movie.thumbnailUrl,
-                    duration: Math.round((movie.durationSeconds || 0) / 60),
-                    rating: Math.min(5, Number((Number(movie.score || movie.classificationScore || 0) / 20).toFixed(1)) || 4),
-                    voteAverage: Number(movie.score || movie.classificationScore || 85),
-                    voteCount: Number(movie.views || movie.viewCount || 0),
-                    releaseYear: movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : 2026,
-                    genres: [country.name, primaryGenre, 'Cinema'].filter(Boolean),
-                  },
-                  seconds,
-                  duration
-                );
-              }
-            }}
-          />
-        </section>
+        {/* 2-Column Responsive High-Density Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 xl:gap-8 items-start">
+          {/* Left Column (Player, Info, Actions, Synopsis, Reviews) */}
+          <div className="lg:col-span-8 xl:col-span-8 2xl:col-span-8 space-y-4">
+            {/* Cinematic Player */}
+            <div className="w-full">
+              <AdvancedCinematicPlayer
+                id={`geo-${movie.id || movie.youtubeVideoId}`}
+                title={movie.title}
+                poster={movie.thumbnail || movie.thumbnailUrl}
+                backdropUrl={movie.thumbnail || movie.thumbnailUrl}
+                youtubeVideoId={movie.youtubeVideoId}
+                country={country.name}
+                durationMinutes={Math.round((movie.durationSeconds || 0) / 60) || 90}
+                onProgress={(seconds, duration) => {
+                  const mid = `geo-${movie.id || movie.youtubeVideoId}`;
+                  localStorage.setItem(`orangeflix_progress_${mid}`, String(Math.floor(seconds)));
+                  if (currentUser) {
+                    const genreArray = (movie.tags || []).slice(0, 3);
+                    const primaryGenre = genreArray.length > 0 ? genreArray[0] : 'Regional Cinema';
 
-        {/* Title, Badges & Actions Bar */}
-        <section className="space-y-4">
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-            <div className="space-y-2 max-w-3xl">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="bg-black/70 backdrop-blur-md text-xs border border-white/15 text-white">
-                  {country.flagEmoji} {country.name} Cinema
-                </Badge>
+                    void FirebaseData.setHistory(
+                      currentUser.id,
+                      {
+                        id: movie.id || movie.youtubeVideoId,
+                        tmdbId: 0,
+                        mediaType: 'movie',
+                        title: movie.title,
+                        description: movie.description || `From ${country.name}`,
+                        posterUrl: movie.thumbnail || movie.thumbnailUrl,
+                        backdropUrl: movie.thumbnail || movie.thumbnailUrl,
+                        duration: Math.round((movie.durationSeconds || 0) / 60),
+                        rating: Math.min(5, Number((Number(movie.score || movie.classificationScore || 0) / 20).toFixed(1)) || 4),
+                        voteAverage: Number(movie.score || movie.classificationScore || 85),
+                        voteCount: Number(movie.views || movie.viewCount || 0),
+                        releaseYear: movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : 2026,
+                        genres: [country.name, primaryGenre, 'Cinema'].filter(Boolean),
+                      },
+                      seconds,
+                      duration
+                    );
+                  }
+                }}
+              />
+            </div>
 
-                {movie.isFullMovieCandidate ? (
-                  <Badge className="bg-orange-500 text-white text-xs font-semibold">
-                    Full Movie
-                  </Badge>
-                ) : (
-                  <Badge className="bg-violet-600 text-white text-xs font-semibold">
-                    {classification === 'series' || classification === 'episode' ? 'TV Series' : 'Video'}
-                  </Badge>
-                )}
-
-                <Badge variant="outline" className="text-red-400 border-red-500/30 text-xs flex items-center gap-1">
-                  <Youtube className="w-3.5 h-3.5" />
-                  YouTube Cinema
-                </Badge>
-
-                <div className="inline-flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full text-amber-400 text-xs font-bold">
-                  <Star className="w-3.5 h-3.5 fill-current" />
-                  {avgRating} ({reviews.length} reviews)
+            {/* Title & Metadata */}
+            <div className="space-y-3 pt-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-white">
+                  {movie.title}
+                </h1>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="inline-flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-lg text-amber-400 text-xs font-bold">
+                    <Star className="w-3.5 h-3.5 fill-current" />
+                    {avgRating} / 5
+                  </div>
+                  <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-300">
+                    {movie.isFullMovieCandidate ? 'FULL MOVIE' : classification === 'series' || classification === 'episode' ? 'SERIES' : 'VIDEO'}
+                  </span>
                 </div>
               </div>
 
-              <h1 className="text-xl sm:text-3xl font-black text-white tracking-tight leading-tight">
-                {movie.title}
-              </h1>
-
-              {/* Meta stats bar with Release Date */}
-              <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-400 pt-0.5">
+              {/* Badges & Meta Stats */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-400">
+                <span className="rounded-full bg-orange-500/15 border border-orange-500/30 px-2 py-0.5 text-orange-400 font-bold">
+                  {country.flagEmoji} {country.name} Cinema
+                </span>
+                <span>•</span>
                 <span className="flex items-center gap-1 font-mono text-white">
                   <Clock className="w-3.5 h-3.5 text-orange-400" />
                   {movie.durationFormatted}
                 </span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
-                  <Eye className="w-3.5 h-3.5 text-gray-500" />
+                  <Eye className="w-3.5 h-3.5 text-slate-400" />
                   {views.toLocaleString()} {t.views}
                 </span>
                 <span>•</span>
@@ -446,290 +440,339 @@ export default function CountryMovieDetail() {
                   {movie.channelTitle}
                 </span>
               </div>
-            </div>
 
-            {/* Action Buttons: Watchlist, Favorite, Share, Watch on YouTube */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleWatchLaterToggle}
-                className={`text-xs border-gray-800 h-9 rounded-xl ${
-                  isWatchLater
-                    ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
-                    : 'bg-gray-900/80 text-gray-300 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                {isWatchLater ? <Check className="w-3.5 h-3.5 mr-1.5 text-orange-400" /> : <Bookmark className="w-3.5 h-3.5 mr-1.5" />}
-                {isWatchLater ? 'In Watchlist' : 'Add to Watchlist'}
-              </Button>
+              {/* Action Deck */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/[0.07]">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleWatchLaterToggle}
+                  className={`text-xs h-9 rounded-xl transition ${
+                    isWatchLater
+                      ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
+                      : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
+                  }`}
+                >
+                  {isWatchLater ? <Check className="w-3.5 h-3.5 mr-1.5 text-orange-400" /> : <Bookmark className="w-3.5 h-3.5 mr-1.5" />}
+                  {isWatchLater ? 'In Watchlist' : 'Add to Watchlist'}
+                </Button>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFavoriteToggle}
-                className={`text-xs border-gray-800 h-9 rounded-xl ${
-                  isFavorited
-                    ? 'bg-rose-500/20 border-rose-500/50 text-rose-400'
-                    : 'bg-gray-900/80 text-gray-300 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                <Heart className={`w-3.5 h-3.5 mr-1.5 ${isFavorited ? 'fill-current text-rose-500' : ''}`} />
-                {isFavorited ? 'Favorited' : 'Favorite'}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFavoriteToggle}
+                  className={`text-xs h-9 rounded-xl transition ${
+                    isFavorited
+                      ? 'bg-rose-500/20 border-rose-500/50 text-rose-400'
+                      : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
+                  }`}
+                >
+                  <Heart className={`w-3.5 h-3.5 mr-1.5 ${isFavorited ? 'fill-current text-rose-500' : ''}`} />
+                  {isFavorited ? 'Favorited' : 'Favorite'}
+                </Button>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleShare}
-                className="bg-gray-900/80 border-gray-800 text-xs text-gray-300 hover:text-white hover:bg-gray-800 h-9 rounded-xl"
-              >
-                {isCopied ? <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5 mr-1.5" />}
-                {isCopied ? 'Copied!' : t.share}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleShare}
+                  className="border-white/[.13] bg-white/[.04] text-xs text-white hover:bg-white/[.09] h-9 rounded-xl"
+                >
+                  {isCopied ? <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5 mr-1.5" />}
+                  {isCopied ? 'Copied!' : t.share}
+                </Button>
 
-              
-            </div>
-          </div>
-
-          {/* ALL SERIES EPISODES / EPISODES PLAYLIST (WHEN MULTIPLE EPISODES AVAILABLE) */}
-          {seriesEpisodes.length > 1 && (
-            <section className="space-y-3 pt-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                    <Tv className="w-3.5 h-3.5" /> Series Episodes & Playlist
-                  </p>
-                  <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
-                    All Episodes ({seriesEpisodes.length})
-                  </h2>
+                <div className="hidden sm:flex items-center gap-2 ml-auto text-[11px] text-slate-400 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-xl">
+                  <Check className="h-3.5 w-3.5 text-orange-400" />
+                  <span>Verified Creator Channel</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {seriesEpisodes.map((ep, idx) => {
-                  const isCurrent = ep.id === movie.id || ep.youtubeVideoId === movie.youtubeVideoId;
-                  const epUrl = `/${countryCode.toLowerCase()}/movies/${ep.slug || ep.youtubeVideoId || ep.id}`;
-                  const epThumb = ep.thumbnail || ep.thumbnailUrl || `https://img.youtube.com/vi/${ep.youtubeVideoId}/hqdefault.jpg`;
-                  const epDate = ep.publishedAt ? new Date(ep.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+              {/* Synopsis & Details Card */}
+              <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-4 space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Synopsis & Details</p>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                  {movie.description || 'No description provided for this stream.'}
+                </p>
 
-                  return (
-                    <Link
-                      key={ep.id}
-                      to={epUrl}
-                      className={`group block p-2.5 rounded-2xl border transition-all duration-200 ${
-                        isCurrent
-                          ? 'bg-orange-500/15 border-orange-500/60 shadow-lg shadow-orange-500/10 scale-[1.01]'
-                          : 'bg-gray-900/60 border-gray-800/80 hover:border-orange-500/40 hover:bg-gray-900/90'
-                      }`}
-                    >
-                      <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-950 mb-2">
-                        <img src={epThumb} alt={ep.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono text-white">
-                          <span className="bg-black/80 backdrop-blur px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px]">
-                            <Clock className="w-2.5 h-2.5 text-orange-400" /> {ep.durationFormatted}
+                {movie.tags && movie.tags.length > 0 && (
+                  <div className="pt-2 border-t border-white/[0.05] flex flex-wrap items-center gap-1.5">
+                    {movie.tags.slice(0, 8).map((tag, idx) => (
+                      <span key={idx} className="rounded-md border border-white/10 bg-black/40 px-2 py-0.5 text-[10px] text-slate-400">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column (Series Episodes Playlist & Up Next Queue) */}
+          <div className="lg:col-span-4 xl:col-span-4 2xl:col-span-4 space-y-4">
+            {/* Series Episodes Playlist Navigator */}
+            {seriesEpisodes.length > 1 && (
+              <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3.5 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Tv className="w-4 h-4 text-orange-400" />
+                    <h3 className="text-sm font-bold text-white">Series Episodes ({seriesEpisodes.length})</h3>
+                  </div>
+                  <span className="text-[10px] text-orange-400 font-semibold uppercase tracking-wider">Playlist</span>
+                </div>
+
+                <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
+                  {seriesEpisodes.map((ep, idx) => {
+                    const isCurrent = ep.id === movie.id || ep.youtubeVideoId === movie.youtubeVideoId;
+                    const epUrl = `/${countryCode.toLowerCase()}/movies/${ep.slug || ep.youtubeVideoId || ep.id}`;
+                    const epThumb = ep.thumbnail || ep.thumbnailUrl || `https://img.youtube.com/vi/${ep.youtubeVideoId}/hqdefault.jpg`;
+                    const epDate = ep.publishedAt ? new Date(ep.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+                    return (
+                      <Link
+                        key={ep.id}
+                        to={epUrl}
+                        className={`flex gap-2.5 p-2 rounded-xl border transition group ${
+                          isCurrent
+                            ? 'bg-orange-500/15 border-orange-500/60 shadow-md shadow-orange-500/10'
+                            : 'bg-black/30 border-white/[0.05] hover:border-orange-500/40 hover:bg-white/[0.03]'
+                        }`}
+                      >
+                        <div className="relative w-24 h-14 shrink-0 rounded-lg overflow-hidden bg-slate-900">
+                          <img src={epThumb} alt={ep.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                          <span className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-white">
+                            {ep.durationFormatted}
                           </span>
-                          {isCurrent ? (
-                            <Badge className="bg-orange-500 text-white text-[9px] px-1.5 py-0">Now Playing</Badge>
-                          ) : (
-                            <span className="bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-gray-300">Ep {idx + 1}</span>
-                          )}
                         </div>
-                      </div>
 
-                      <div className="space-y-1">
-                        <h3 className={`text-xs font-bold line-clamp-2 leading-snug ${isCurrent ? 'text-orange-400' : 'text-white group-hover:text-orange-300'}`}>
-                          {ep.title}
-                        </h3>
-                        <div className="flex items-center justify-between text-[10px] text-gray-400">
-                          <span className="truncate max-w-[120px]">{ep.channelTitle}</span>
-                          <span>{epDate}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[10px] font-bold text-orange-400 uppercase">
+                              Ep {idx + 1}
+                            </span>
+                            {isCurrent && (
+                              <span className="bg-orange-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-bold">
+                                Now Playing
+                              </span>
+                            )}
+                          </div>
+                          <h4 className={`truncate text-xs font-semibold mt-0.5 ${isCurrent ? 'text-orange-300' : 'text-white group-hover:text-orange-400'} transition-colors`}>
+                            {ep.title}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 mt-1 truncate">
+                            {ep.channelTitle} • {epDate}
+                          </p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Up Next & Regional Recommendations Queue */}
+            {related.length > 0 && (
+              <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3.5 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-orange-400" />
+                    <h3 className="text-sm font-bold text-white">Up Next from {country.name}</h3>
+                  </div>
+                  <Link
+                    to={`/${countryCode.toLowerCase()}/movies`}
+                    className="text-[11px] font-semibold text-orange-400 hover:text-orange-300"
+                  >
+                    All →
+                  </Link>
+                </div>
+
+                <div className="space-y-2">
+                  {related.slice(0, 5).map((relItem) => (
+                    <Link
+                      key={relItem.id}
+                      to={`/${countryCode.toLowerCase()}/movies/${relItem.slug || relItem.id}`}
+                      className="flex gap-2.5 p-2 rounded-xl border border-white/[0.05] bg-black/20 hover:border-orange-500/40 hover:bg-white/[0.04] transition group"
+                    >
+                      <div className="relative w-24 h-14 shrink-0 rounded-lg overflow-hidden bg-slate-900">
+                        <img
+                          src={relItem.thumbnail || relItem.thumbnailUrl || `https://img.youtube.com/vi/${relItem.youtubeVideoId}/hqdefault.jpg`}
+                          alt={relItem.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <span className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-white">
+                          {relItem.durationFormatted}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-xs font-semibold text-white group-hover:text-orange-400 transition-colors">
+                          {relItem.title}
+                        </h4>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
+                          <span className="truncate max-w-[110px]">{relItem.channelTitle}</span>
+                          <span>•</span>
+                          <span>{(relItem.views || relItem.viewCount || 0).toLocaleString()} views</span>
                         </div>
                       </div>
                     </Link>
-                  );
-                })}
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. Bottom Section: Full-Width Discoveries & Reviews */}
+        <div className="space-y-10 pt-10 border-t border-white/[0.08] mt-8">
+          {/* More Related Regional Productions Grid (Full Width) */}
+          {related.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" /> More from {country.name}
+                  </p>
+                  <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                    Related Regional Productions
+                  </h2>
+                </div>
+
+                <Link
+                  to={`/${countryCode.toLowerCase()}/movies`}
+                  className="text-xs text-orange-400 hover:text-orange-300 font-semibold"
+                >
+                  View all {country.name} movies →
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {related.map((m) => (
+                  <CountryMovieCard key={m.id} movie={m} countryCode={countryCode} />
+                ))}
               </div>
             </section>
           )}
 
-          {/* Description Card */}
-          <Card className="bg-gray-900/50 border-gray-800/80 backdrop-blur-xl rounded-2xl">
-            <CardContent className="p-5 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400">Synopsis & Details</h3>
-              <p className="text-xs sm:text-sm text-gray-300 leading-relaxed whitespace-pre-line">
-                {movie.description || 'No description provided for this stream.'}
-              </p>
-
-              {movie.tags && movie.tags.length > 0 && (
-                <div className="pt-2 border-t border-gray-800/60 flex flex-wrap items-center gap-1.5">
-                  {movie.tags.slice(0, 8).map((tag, idx) => (
-                    <Badge key={idx} variant="secondary" className="bg-black/50 text-[10px] text-gray-400 border border-white/5">
-                      #{tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* COMMUNITY RATINGS & REVIEWS SECTION */}
-        <section className="space-y-5 pt-4 border-t border-gray-800/60">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-orange-400" />
-                Viewer Reviews & Ratings ({reviews.length})
-              </h2>
-              <p className="text-xs text-gray-400">
-                Rate this {country.name} title and share your thoughts with the community.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-1 bg-gray-900/80 border border-gray-800 px-2.5 py-1 rounded-xl text-xs">
-              <span className="text-gray-400">Avg Rating:</span>
-              <span className="font-bold text-amber-400 font-mono flex items-center gap-1">
-                <Star className="w-3.5 h-3.5 fill-current" /> {avgRating} / 5
-              </span>
-            </div>
-          </div>
-
-          {/* Add Review Form */}
-          <Card className="bg-gray-900/40 border-gray-800/80 rounded-2xl">
-            <CardContent className="p-4 space-y-3">
-              <form onSubmit={handleSubmitReview} className="space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold text-gray-300">Your Rating:</span>
-                    <div className="flex items-center gap-1">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          onClick={() => setUserRating(star)}
-                          onMouseEnter={() => setHoverRating(star)}
-                          onMouseLeave={() => setHoverRating(0)}
-                          className="p-1 text-gray-600 hover:text-amber-400 transition"
-                          aria-label={`Rate ${star} stars`}
-                        >
-                          <Star
-                            className={`w-4 h-4 ${
-                              (hoverRating || userRating) >= star
-                                ? 'fill-amber-400 text-amber-400'
-                                : 'text-gray-600'
-                            }`}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <span className="text-xs text-gray-400">
-                    Posting as: <strong className="text-white">{currentUser ? currentUser.name || 'You' : 'Guest'}</strong>
-                  </span>
-                </div>
-
-                <Textarea
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  placeholder={`Write your review about "${movie.title}"...`}
-                  className="bg-gray-950 border-gray-800 text-xs text-white resize-none rounded-xl focus:border-orange-500 min-h-[70px]"
-                />
-
-                <div className="flex justify-end">
-                  <Button
-                    type="submit"
-                    disabled={isSubmittingReview || !commentText.trim()}
-                    className="bg-orange-500 hover:bg-orange-600 text-white text-xs h-8 px-4 rounded-xl shadow-md shadow-orange-500/20"
-                  >
-                    <Send className="w-3.5 h-3.5 mr-1.5" />
-                    Submit Review
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-
-          {/* Reviews List */}
-          <div className="space-y-2.5">
-            {reviews.length === 0 ? (
-              <div className="text-center py-6 bg-gray-900/20 rounded-2xl border border-gray-800/40 p-4">
-                <MessageSquare className="w-6 h-6 text-gray-600 mx-auto mb-1.5" />
-                <p className="text-xs text-gray-400 font-medium">Be the first to review this {country.name} movie!</p>
-              </div>
-            ) : (
-              reviews.map((rev) => (
-                <Card key={rev.id} className="bg-gray-900/30 border-gray-800/60 rounded-xl">
-                  <CardContent className="p-3.5 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-xs">
-                          <User className="w-3.5 h-3.5" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-white">{rev.userName || 'OrangeFlix Viewer'}</p>
-                          <p className="text-[10px] text-gray-500">
-                            {new Date(rev.createdAt).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-0.5">
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Star
-                            key={s}
-                            className={`w-3 h-3 ${
-                              (rev.rating || 5) >= s ? 'fill-amber-400 text-amber-400' : 'text-gray-700'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-gray-300 pl-8 leading-relaxed">
-                      {rev.comment}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* More Related Cinema from Country */}
-        {related.length > 0 && (
-          <section className="space-y-3 pt-6 border-t border-gray-800/60">
-            <div className="flex items-center justify-between">
+          {/* Community Ratings & Reviews (Full Width) */}
+          <section className="rounded-2xl border border-white/[.08] bg-white/[.02] p-5 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" /> More from {country.name}
-                </p>
-                <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
-                  Related Regional Productions
+                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400">Audience Reactions</p>
+                <h2 className="text-lg sm:text-xl font-bold text-white">
+                  Viewer Reviews & Ratings ({reviews.length})
                 </h2>
               </div>
-
-              <Link
-                to={`/${countryCode.toLowerCase()}/movies`}
-                className="text-xs text-orange-400 hover:text-orange-300 font-semibold"
-              >
-                View all {country.name} movies →
-              </Link>
+              <div className="flex items-center gap-2 bg-white/[0.04] border border-white/10 px-3.5 py-1.5 rounded-xl text-xs">
+                <span className="text-slate-400">Avg Rating:</span>
+                <span className="font-bold text-amber-400 font-mono flex items-center gap-1">
+                  <Star className="w-3.5 h-3.5 fill-current" /> {avgRating} / 5
+                </span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {related.map((m) => (
-                <CountryMovieCard key={m.id} movie={m} countryCode={countryCode} />
-              ))}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Review Composer Form */}
+              <div className="lg:col-span-5">
+                <div className="rounded-xl border border-white/[.07] bg-black/30 p-4 space-y-3">
+                  <form onSubmit={handleSubmitReview} className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-slate-300">Your Rating:</span>
+                        <div className="flex items-center gap-0.5">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setUserRating(star)}
+                              onMouseEnter={() => setHoverRating(star)}
+                              onMouseLeave={() => setHoverRating(0)}
+                              className="p-1 text-slate-600 hover:text-amber-400 transition"
+                              aria-label={`Rate ${star} stars`}
+                            >
+                              <Star
+                                className={`w-4 h-4 ${
+                                  (hoverRating || userRating) >= star
+                                    ? 'fill-amber-400 text-amber-400'
+                                    : 'text-slate-600'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <span className="text-xs text-slate-400">
+                        Posting as: <strong className="text-white">{currentUser ? currentUser.name || 'You' : 'Guest'}</strong>
+                      </span>
+                    </div>
+
+                    <Textarea
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      placeholder={`Write your review about "${movie.title}"...`}
+                      className="bg-black/50 border-white/10 text-xs text-white placeholder-slate-500 resize-none rounded-xl focus:border-orange-500 min-h-[75px]"
+                    />
+
+                    <div className="flex justify-end">
+                      <Button
+                        type="submit"
+                        disabled={isSubmittingReview || !commentText.trim()}
+                        className="bg-orange-500 hover:bg-orange-600 text-white text-xs h-8 px-4 rounded-xl shadow-md shadow-orange-500/20"
+                      >
+                        <Send className="w-3.5 h-3.5 mr-1.5" />
+                        Submit Review
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              {/* Reviews List */}
+              <div className="lg:col-span-7 space-y-3">
+                {reviews.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-slate-500">
+                    No reviews yet. Be the first to share your rating for this {country.name} movie!
+                  </p>
+                ) : (
+                  reviews.map((rev) => (
+                    <div key={rev.id} className="rounded-xl border border-white/[.06] bg-black/20 p-3.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-xs">
+                            <User className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-white">{rev.userName || 'OrangeFlix Viewer'}</p>
+                            <p className="text-[10px] text-slate-500">
+                              {new Date(rev.createdAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-0.5">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Star
+                              key={s}
+                              className={`w-3 h-3 ${
+                                (rev.rating || 5) >= s ? 'fill-amber-400 text-amber-400' : 'text-slate-700'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-300 pl-8 leading-relaxed">
+                        {rev.comment}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </section>
-        )}
+        </div>
       </div>
     </div>
   );

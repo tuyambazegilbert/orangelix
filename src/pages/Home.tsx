@@ -28,6 +28,8 @@ const normalizeRegionalTitle = (title?: string) => {
   return `${words.slice(0, 3).join(' ')}`;
 };
 
+const LANDING_COUNTRY_CODES = ['RW', 'UG', 'KE', 'NG', 'GH', 'TZ', 'ZA'];
+
 export default function Home() {
   const navigate = useNavigate();
   const trending = useTrending('all', 'week');
@@ -41,7 +43,6 @@ export default function Home() {
   const [geoCinemaLoading, setGeoCinemaLoading] = useState(true);
 
   const countries = useMemo(() => getAllCountries(), []);
-  const landingCountryCodes = ['RW', 'UG', 'KE', 'NG', 'GH', 'TZ', 'ZA'];
 
   const geoFeaturedItems = useMemo(() => {
     if (!geoCinemaItems.length) return [] as MediaItem[];
@@ -92,7 +93,7 @@ export default function Home() {
 
       try {
         const batches = await Promise.all(
-          landingCountryCodes.map((countryCode) => GeoContentService.getRecommendations(countryCode, 4))
+          LANDING_COUNTRY_CODES.map((countryCode) => GeoContentService.getRecommendations(countryCode, 4))
         );
 
         const merged = batches.flat();
@@ -120,7 +121,7 @@ export default function Home() {
     return () => {
       isMounted = false;
     };
-  }, [landingCountryCodes]);
+  }, []);
 
   const continueItems: MediaItem[] = history.filter((item) => item.progressSeconds > 0 && item.progressSeconds < (item.durationSeconds || 7200) * .95).map((item) => ({
     id: item.contentId, tmdbId: item.tmdbId || Number(item.contentId.replace(/\D/g, '')) || 0, mediaType: item.mediaType, title: item.title, description: '', posterUrl: item.posterUrl || null, backdropUrl: null, imageUrl: item.posterUrl || '', rating: 0, voteAverage: 0, voteCount: 0, releaseDate: null, releaseYear: null, genres: item.genre || [], duration: item.durationSeconds ? Math.round(item.durationSeconds / 60) : null,

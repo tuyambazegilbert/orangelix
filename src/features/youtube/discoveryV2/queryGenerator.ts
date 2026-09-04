@@ -1,7 +1,8 @@
 /**
  * OrangeFlix Discovery V2 — Query Generator
- * Intelligent search query generation from structured keyword families
- * Supports 40+ keywords per category with priority-based execution
+ * High-Recall Search Intelligence & Query Expansion Engine
+ * Generates rich, authentic, high-converting queries combining:
+ * Country + Language + Cinema Movements + Translators/Distributors + Recency + Genres + Episodic Triggers.
  */
 
 import {
@@ -10,266 +11,469 @@ import {
   DiscoveryKeywordSet,
   LanguageKeywordSet,
 } from './types';
-import {
-  QUERY_TIERS,
-  KEYWORD_MINIMUMS,
-  LANGUAGE_CINEMA_TERMS,
-} from './constants';
+import { KEYWORD_MINIMUMS } from './constants';
 import { generateHash, normalizeString } from './utils';
+import { LOCAL } from './profiles';
+
+export interface SmartQueryOptions {
+  mode?: 'smart' | 'manual' | 'incremental' | 'deep' | 'scheduled' | 'channels_only';
+  scope?: 'all' | 'movies' | 'series';
+  limit?: number;
+  includeRecency?: boolean;
+  trustedChannels?: Array<{ id: string; title: string }>;
+  seriesTitles?: string[];
+}
 
 /**
- * Generate movie queries for a country
+ * Helper: Interleave two query lists 1:1 round-robin to preserve balanced representation.
+ */
+function interleaveQueries(listA: GeneratedQuery[], listB: GeneratedQuery[]): GeneratedQuery[] {
+  const result: GeneratedQuery[] = [];
+  const maxLen = Math.max(listA.length, listB.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (i < listA.length) result.push(listA[i]);
+    if (i < listB.length) result.push(listB[i]);
+  }
+  return result;
+}
+
+/**
+ * Generate high-yield movie queries for a territory with 50/50 dual-language richness.
+ * Combines authentic local language cinema terms + standard English / subtitled / demonym cinema terms.
  */
 export function generateMovieQueries(
   config: GeoCountryConfigV2,
   limit?: number
 ): GeneratedQuery[] {
-  const queries: GeneratedQuery[] = [];
+  const code = config.countryCode.toUpperCase();
+  const localData = LOCAL[code];
+  const demonym = config.demonym || localData?.demonym || config.name;
+  const currentYear = new Date().getFullYear();
+  const pastYear = currentYear - 1;
 
-  const keywords = config.discoveryKeywords.movie || [];
-  const countryName = config.name;
-  const demonym = config.demonym;
-  const languages = config.languageKeywords || [];
+  const localQueries: GeneratedQuery[] = [];
+  const englishQueries: GeneratedQuery[] = [];
 
-  // TIER 1: Exact country + full movie
-  queries.push({
-    query: `${countryName} full movie`,
-    queryHash: generateHash(`${config.countryCode}-full-movie-${countryName}`),
-    countryCode: config.countryCode,
-    type: 'movie',
-    tier: 1,
-    priorityScore: 100,
-    reason: 'Exact country + full movie keyword',
-  });
+  // 1. TOP TIER 1: Dedicated curated high-yield queries (split by even/odd for local vs standard English)
+  if (localData?.topHighYieldMovieQueries) {
+    localData.topHighYieldMovieQueries.forEach((qStr, idx) => {
+      const isLocal = idx % 2 === 0;
+      const targetList = isLocal ? localQueries : englishQueries;
+      targetList.push({
+        query: qStr,
+        queryHash: generateHash(`${code}:movie:high_yield:${normalizeString(qStr)}`),
+        countryCode: code,
+        type: 'movie',
+        tier: 1,
+        priorityScore: 100 - idx,
+        reason: `${isLocal ? 'Local Authentic' : 'Standard English'} Cinema Query: "${qStr}"`,
+      });
+    });
+  }
 
-  queries.push({
-    query: `${demonym} full movie`,
-    queryHash: generateHash(`${config.countryCode}-full-movie-${demonym}`),
-    countryCode: config.countryCode,
-    type: 'movie',
-    tier: 1,
-    priorityScore: 100,
-    reason: 'Demonym + full movie keyword',
-  });
+  // 2. TIER 1: Cinema Movement + Full Movie & Recency Combinations (Local Native)
+  const cinemaTerms = localData?.cinema || config.cinemaTerms || [];
+  for (const cinema of cinemaTerms.slice(0, 8)) {
+    localQueries.push({
+      query: `${cinema} full movie`,
+      queryHash: generateHash(`${code}:movie:${normalizeString(cinema)}:full_movie`),
+      countryCode: code,
+      type: 'movie',
+      tier: 1,
+      priorityScore: 98,
+      reason: `Authentic Cinema Term: "${cinema} full movie"`,
+    });
 
-  // TIER 2: Country + cinema terms
-  for (const term of config.discoveryKeywords.fullContent?.slice(0, 5) || []) {
-    queries.push({
-      query: `${countryName} ${term}`,
-      queryHash: generateHash(`${config.countryCode}-movie-${countryName}-${term}`),
-      countryCode: config.countryCode,
+    localQueries.push({
+      query: `${cinema} ${currentYear}`,
+      queryHash: generateHash(`${code}:movie:${normalizeString(cinema)}:${currentYear}`),
+      countryCode: code,
+      type: 'movie',
+      tier: 1,
+      priorityScore: 97,
+      reason: `Recency Cinema Query: "${cinema} ${currentYear}"`,
+    });
+
+    localQueries.push({
+      query: `${cinema} ${pastYear} full movie`,
+      queryHash: generateHash(`${code}:movie:${normalizeString(cinema)}:${pastYear}`),
+      countryCode: code,
       type: 'movie',
       tier: 2,
-      priorityScore: 90,
-      reason: `Country + ${term}`,
+      priorityScore: 92,
+      reason: `Catalog Recency: "${cinema} ${pastYear} full movie"`,
     });
   }
 
-  // TIER 3: Language-based queries
-  for (const langKeywords of languages) {
-    for (const term of (langKeywords as unknown as Record<string, string[]>).movie?.slice(0, 3) || []) {
-      queries.push({
-        query: `${term} movie`,
-        queryHash: generateHash(`${config.countryCode}-movie-${langKeywords.languageCode}-${term}`),
-        countryCode: config.countryCode,
-        type: 'movie',
-        tier: 3,
-        priorityScore: 75,
-        language: langKeywords.languageCode,
-        reason: `Language-based: ${term} movie`,
-      });
+  // 3. TIER 2: Native Language / Dialect Movie Combinations (Local)
+  if (localData?.language) {
+    for (const [langCode, terms] of Object.entries(localData.language)) {
+      if (langCode === 'en') continue;
+      for (const term of terms.slice(0, 4)) {
+        localQueries.push({
+          query: `${term} full movie`,
+          queryHash: generateHash(`${code}:movie:${langCode}:${normalizeString(term)}:full`),
+          countryCode: code,
+          type: 'movie',
+          tier: 2,
+          priorityScore: 90,
+          language: langCode,
+          reason: `Native Language Term: "${term} full movie" (${langCode})`,
+        });
+      }
     }
   }
 
-  // TIER 4: Genre-based queries
-  for (const genre of config.discoveryKeywords.genres?.slice(0, 5) || []) {
-    queries.push({
-      query: `${demonym} ${genre} movie`,
-      queryHash: generateHash(`${config.countryCode}-genre-${genre}`),
-      countryCode: config.countryCode,
+  // 4. TIER 2 & 3: Standard English & Demonym Cinema Combinations
+  englishQueries.push({
+    query: `${demonym} full movie english subtitles`,
+    queryHash: generateHash(`${code}:movie:${demonym}:subtitles`),
+    countryCode: code,
+    type: 'movie',
+    tier: 1,
+    priorityScore: 96,
+    reason: `Subtitled Search: "${demonym} full movie english subtitles"`,
+  });
+
+  englishQueries.push({
+    query: `${demonym} movies ${currentYear} full movie`,
+    queryHash: generateHash(`${code}:movie:${demonym}:${currentYear}:full`),
+    countryCode: code,
+    type: 'movie',
+    tier: 1,
+    priorityScore: 95,
+    reason: `English Recency Search: "${demonym} movies ${currentYear} full movie"`,
+  });
+
+  englishQueries.push({
+    query: `${demonym} movie full hd 1080p`,
+    queryHash: generateHash(`${code}:movie:${demonym}:1080p`),
+    countryCode: code,
+    type: 'movie',
+    tier: 2,
+    priorityScore: 91,
+    reason: `HD Quality Search: "${demonym} movie full hd 1080p"`,
+  });
+
+  englishQueries.push({
+    query: `${config.name} cinema full movie english subtitles`,
+    queryHash: generateHash(`${code}:movie:${normalizeString(config.name)}:cinema_subtitles`),
+    countryCode: code,
+    type: 'movie',
+    tier: 2,
+    priorityScore: 89,
+    reason: `Territory Cinema Subtitles: "${config.name} cinema full movie english subtitles"`,
+  });
+
+  // 5. TIER 4: Genres in both Local & English
+  const topGenres = ['action', 'comedy', 'romance', 'drama', 'crime'];
+  const primaryCinema = cinemaTerms[0] || `${demonym} movie`;
+  for (const genre of topGenres) {
+    localQueries.push({
+      query: `${primaryCinema} ${genre} full movie`,
+      queryHash: generateHash(`${code}:movie:genre:${normalizeString(primaryCinema)}:${genre}`),
+      countryCode: code,
       type: 'movie',
-      tier: 4,
-      priorityScore: 65,
-      reason: `Genre + country: ${genre}`,
+      tier: 3,
+      priorityScore: 84,
+      reason: `Local Genre Discovery: "${primaryCinema} ${genre} full movie"`,
+    });
+
+    englishQueries.push({
+      query: `${demonym} ${genre} full movie`,
+      queryHash: generateHash(`${code}:movie:genre:${normalizeString(demonym)}:${genre}`),
+      countryCode: code,
+      type: 'movie',
+      tier: 3,
+      priorityScore: 83,
+      reason: `Standard English Genre Discovery: "${demonym} ${genre} full movie"`,
     });
   }
 
-  // Additional high-priority queries from keyword set
-  const additionalKeywords = config.discoveryKeywords.movie || [];
-  for (let i = 0; i < Math.min(additionalKeywords.length, 10); i++) {
-    const kw = additionalKeywords[i];
-    if (!queries.some(q => q.query === kw)) {
-      queries.push({
-        query: kw,
-        queryHash: generateHash(`${config.countryCode}-${kw}`),
-        countryCode: config.countryCode,
-        type: 'movie',
-        tier: 2,
-        priorityScore: 80 - i * 2,
-        reason: `Keyword: ${kw}`,
-      });
-    }
-  }
+  // Interleave local and english queries 1:1 round-robin for equal representation
+  const interleaved = interleaveQueries(localQueries, englishQueries);
+  const unique = deduplicateByKey(interleaved, (q) => q.queryHash);
 
-  // Deduplicate and sort by priority
-  const uniqueQueries = deduplicateByKey(queries, (q: GeneratedQuery) => q.queryHash);
-  uniqueQueries.sort((a, b) => b.priorityScore - a.priorityScore);
-
-  // Apply limit if specified
-  return limit ? uniqueQueries.slice(0, limit) : uniqueQueries;
+  return limit ? unique.slice(0, limit) : unique;
 }
 
 /**
- * Generate series queries for a country
+ * Generate high-yield series queries for a territory with 50/50 dual-language richness.
+ * Targets authentic episodic formats, telenovelas, web series, and local series tags.
  */
 export function generateSeriesQueries(
   config: GeoCountryConfigV2,
   limit?: number
 ): GeneratedQuery[] {
-  const queries: GeneratedQuery[] = [];
+  const code = config.countryCode.toUpperCase();
+  const localData = LOCAL[code];
+  const demonym = config.demonym || localData?.demonym || config.name;
 
-  const countryName = config.name;
-  const demonym = config.demonym;
+  const localSeriesQueries: GeneratedQuery[] = [];
+  const englishSeriesQueries: GeneratedQuery[] = [];
 
-  // TIER 1: Country + TV series/drama
-  queries.push({
-    query: `${demonym} TV series`,
-    queryHash: generateHash(`${config.countryCode}-series-${demonym}-tv`),
-    countryCode: config.countryCode,
-    type: 'series',
-    tier: 1,
-    priorityScore: 100,
-    reason: 'Country + TV series',
-  });
+  // 1. TOP TIER 1: Dedicated curated high-yield series queries (split by even/odd)
+  if (localData?.topHighYieldSeriesQueries) {
+    localData.topHighYieldSeriesQueries.forEach((qStr, idx) => {
+      const isLocal = idx % 2 === 0;
+      const targetList = isLocal ? localSeriesQueries : englishSeriesQueries;
+      targetList.push({
+        query: qStr,
+        queryHash: generateHash(`${code}:series:high_yield:${normalizeString(qStr)}`),
+        countryCode: code,
+        type: 'series',
+        tier: 1,
+        priorityScore: 100 - idx,
+        reason: `${isLocal ? 'Local Series' : 'Standard English Series'} Query: "${qStr}"`,
+      });
+    });
+  }
 
-  queries.push({
-    query: `${countryName} drama series`,
-    queryHash: generateHash(`${config.countryCode}-series-${countryName}-drama`),
-    countryCode: config.countryCode,
-    type: 'series',
-    tier: 1,
-    priorityScore: 100,
-    reason: 'Country + drama series',
-  });
+  // 2. TIER 1: Cinema Movement + Series / Episode 1 Triggers (Local)
+  const cinemaTerms = localData?.cinema || config.cinemaTerms || [];
+  for (const cinema of cinemaTerms.slice(0, 6)) {
+    localSeriesQueries.push({
+      query: `${cinema} episode 1`,
+      queryHash: generateHash(`${code}:series:${normalizeString(cinema)}:ep1`),
+      countryCode: code,
+      type: 'series',
+      tier: 1,
+      priorityScore: 98,
+      reason: `Series Pilot / Ep 1: "${cinema} episode 1"`,
+    });
 
-  // TIER 2: Country + series keywords
-  for (const term of config.discoveryKeywords.series?.slice(0, 5) || []) {
-    queries.push({
-      query: `${countryName} ${term}`,
-      queryHash: generateHash(`${config.countryCode}-series-${countryName}-${term}`),
-      countryCode: config.countryCode,
+    localSeriesQueries.push({
+      query: `${cinema} season 1 episode 1`,
+      queryHash: generateHash(`${code}:series:${normalizeString(cinema)}:s1e1`),
+      countryCode: code,
+      type: 'series',
+      tier: 1,
+      priorityScore: 97,
+      reason: `Season 1 Episode 1: "${cinema} season 1 episode 1"`,
+    });
+
+    localSeriesQueries.push({
+      query: `${cinema} series full`,
+      queryHash: generateHash(`${code}:series:${normalizeString(cinema)}:full_series`),
+      countryCode: code,
       type: 'series',
       tier: 2,
-      priorityScore: 85,
-      reason: `Country + ${term}`,
+      priorityScore: 90,
+      reason: `Full Series Search: "${cinema} series full"`,
     });
   }
 
-  // TIER 3: Season number searches (dynamic)
-  for (let season = 1; season <= 3; season++) {
-    queries.push({
-      query: `${demonym} season ${season}`,
-      queryHash: generateHash(`${config.countryCode}-series-season-${season}`),
-      countryCode: config.countryCode,
-      type: 'series',
-      tier: 3,
-      priorityScore: 70,
-      reason: `Series search: season ${season}`,
-    });
-  }
+  // 3. TIER 2: Demonym + Drama / Web Series (Standard English)
+  englishSeriesQueries.push({
+    query: `${demonym} drama series season 1 episode 1`,
+    queryHash: generateHash(`${code}:series:${demonym}:drama_s1e1`),
+    countryCode: code,
+    type: 'series',
+    tier: 1,
+    priorityScore: 96,
+    reason: `Demonym Drama Season 1: "${demonym} drama series season 1 episode 1"`,
+  });
 
-  // TIER 4: Language-based series queries
-  for (const langKeywords of config.languageKeywords || []) {
-    for (const term of (langKeywords as unknown as Record<string, string[]>).series?.slice(0, 2) || []) {
-      queries.push({
-        query: `${term} series`,
-        queryHash: generateHash(`${config.countryCode}-series-${langKeywords.languageCode}-${term}`),
-        countryCode: config.countryCode,
-        type: 'series',
-        tier: 4,
-        priorityScore: 65,
-        language: langKeywords.languageCode,
-        reason: `Language series: ${term}`,
-      });
+  englishSeriesQueries.push({
+    query: `${demonym} drama series episode 1`,
+    queryHash: generateHash(`${code}:series:${demonym}:drama_ep1`),
+    countryCode: code,
+    type: 'series',
+    tier: 1,
+    priorityScore: 95,
+    reason: `Demonym Drama Series: "${demonym} drama series episode 1"`,
+  });
+
+  englishSeriesQueries.push({
+    query: `${demonym} web series season 1`,
+    queryHash: generateHash(`${code}:series:${demonym}:web_s1`),
+    countryCode: code,
+    type: 'series',
+    tier: 2,
+    priorityScore: 88,
+    reason: `Web Series: "${demonym} web series season 1"`,
+  });
+
+  englishSeriesQueries.push({
+    query: `${config.name} tv series full episodes`,
+    queryHash: generateHash(`${code}:series:${normalizeString(config.name)}:tv_full_episodes`),
+    countryCode: code,
+    type: 'series',
+    tier: 2,
+    priorityScore: 87,
+    reason: `Full Episodes Search: "${config.name} tv series full episodes"`,
+  });
+
+  // 4. TIER 3: Native Language / Dialect Series Triggers (Local)
+  if (localData?.language) {
+    for (const [langCode, terms] of Object.entries(localData.language)) {
+      if (langCode === 'en') continue;
+      for (const term of terms.slice(0, 3)) {
+        localSeriesQueries.push({
+          query: `${term} episode 1`,
+          queryHash: generateHash(`${code}:series:${langCode}:${normalizeString(term)}:ep1`),
+          countryCode: code,
+          type: 'series',
+          tier: 2,
+          priorityScore: 87,
+          language: langCode,
+          reason: `Native Series Term: "${term} episode 1" (${langCode})`,
+        });
+      }
     }
   }
 
-  // Deduplicate and sort
-  const uniqueQueries = deduplicateByKey(queries, (q: GeneratedQuery) => q.queryHash);
-  uniqueQueries.sort((a, b) => b.priorityScore - a.priorityScore);
+  // Interleave local and english series queries 1:1 round-robin for equal representation
+  const interleaved = interleaveQueries(localSeriesQueries, englishSeriesQueries);
+  const unique = deduplicateByKey(interleaved, (q) => q.queryHash);
 
-  return limit ? uniqueQueries.slice(0, limit) : uniqueQueries;
+  return limit ? unique.slice(0, limit) : unique;
 }
 
 /**
- * Generate episode queries (typically for specific series)
+ * Generate episode queries for a specific series title.
  */
 export function generateEpisodeQueries(
   seriesTitle: string,
   countryCode: string,
-  config?: GeoCountryConfigV2,
+  _config?: GeoCountryConfigV2,
   limit?: number
 ): GeneratedQuery[] {
   const queries: GeneratedQuery[] = [];
   const normalized = normalizeString(seriesTitle);
+  const code = countryCode.toUpperCase();
 
-  // Search for full episodes
   queries.push({
-    query: `${seriesTitle} full episode`,
-    queryHash: generateHash(`${countryCode}-episode-${normalized}-full`),
-    countryCode,
+    query: `${seriesTitle} episode 1`,
+    queryHash: generateHash(`${code}:episode:${normalized}:ep1`),
+    countryCode: code,
     type: 'episode',
     tier: 1,
     priorityScore: 100,
+    reason: `Series: "${seriesTitle}" Episode 1`,
+  });
+
+  queries.push({
+    query: `${seriesTitle} full episode`,
+    queryHash: generateHash(`${code}:episode:${normalized}:full`),
+    countryCode: code,
+    type: 'episode',
+    tier: 1,
+    priorityScore: 98,
     reason: `Series: "${seriesTitle}" full episode`,
   });
 
-  // Search for new episodes
   queries.push({
     query: `${seriesTitle} new episode`,
-    queryHash: generateHash(`${countryCode}-episode-${normalized}-new`),
-    countryCode,
+    queryHash: generateHash(`${code}:episode:${normalized}:new`),
+    countryCode: code,
     type: 'episode',
     tier: 1,
     priorityScore: 95,
     reason: `Series: "${seriesTitle}" new episode`,
   });
 
-  // Search for specific seasons
-  for (let season = 1; season <= 5; season++) {
+  for (let season = 1; season <= 3; season++) {
     queries.push({
       query: `${seriesTitle} season ${season}`,
-      queryHash: generateHash(`${countryCode}-episode-${normalized}-s${season}`),
-      countryCode,
+      queryHash: generateHash(`${code}:episode:${normalized}:s${season}`),
+      countryCode: code,
       type: 'episode',
       tier: 2,
-      priorityScore: 85 - season,
+      priorityScore: 88 - season,
       reason: `Series: "${seriesTitle}" season ${season}`,
     });
   }
 
-  // Search with episode number patterns
-  for (let ep = 1; ep <= 10; ep++) {
+  for (let ep = 2; ep <= 8; ep++) {
     queries.push({
       query: `${seriesTitle} episode ${ep}`,
-      queryHash: generateHash(`${countryCode}-episode-${normalized}-e${ep}`),
-      countryCode,
+      queryHash: generateHash(`${code}:episode:${normalized}:ep${ep}`),
+      countryCode: code,
       type: 'episode',
       tier: 2,
-      priorityScore: 80 - ep,
+      priorityScore: 85 - ep,
       reason: `Series: "${seriesTitle}" episode ${ep}`,
     });
   }
 
-  // Deduplicate and sort
-  const uniqueQueries = deduplicateByKey(queries, (q: GeneratedQuery) => q.queryHash);
-  uniqueQueries.sort((a, b) => b.priorityScore - a.priorityScore);
+  const unique = deduplicateByKey(queries, (q) => q.queryHash);
+  unique.sort((a, b) => b.priorityScore - a.priorityScore);
 
-  return limit ? uniqueQueries.slice(0, limit) : uniqueQueries;
+  return limit ? unique.slice(0, limit) : unique;
 }
 
 /**
- * Generate channel discovery queries
+ * Generate targeted gap-search queries for missing episode numbers in a series.
+ */
+export function generateEpisodeGapQueries(
+  seriesTitle: string,
+  countryCode: string,
+  knownEpisodeNumbers: number[],
+  seasonNumber: number = 1,
+  limit: number = 6
+): GeneratedQuery[] {
+  const code = countryCode.toUpperCase();
+  if (!knownEpisodeNumbers || knownEpisodeNumbers.length === 0) {
+    return generateEpisodeQueries(seriesTitle, code, undefined, limit);
+  }
+
+  const sorted = Array.from(new Set(knownEpisodeNumbers)).sort((a, b) => a - b);
+  const maxEp = sorted[sorted.length - 1];
+  const missingNumbers: number[] = [];
+
+  // Find intermediate gaps (e.g. 1, 2, 4, 5 -> 3)
+  for (let i = 1; i < maxEp; i++) {
+    if (!sorted.includes(i)) {
+      missingNumbers.push(i);
+    }
+  }
+
+  // Also check the next continuation episode (e.g. max + 1)
+  missingNumbers.push(maxEp + 1);
+
+  const queries: GeneratedQuery[] = [];
+  const normalized = normalizeString(seriesTitle);
+  const sStr = String(seasonNumber).padStart(2, '0');
+
+  for (const epNum of missingNumbers.slice(0, limit)) {
+    const eStr = String(epNum).padStart(2, '0');
+    queries.push({
+      query: `${seriesTitle} Episode ${epNum}`,
+      queryHash: generateHash(`${code}:gap:${normalized}:ep${epNum}`),
+      countryCode: code,
+      type: 'episode',
+      tier: 1,
+      priorityScore: 100,
+      reason: `Episode gap: Episode ${epNum}`,
+    });
+
+    queries.push({
+      query: `${seriesTitle} S${sStr}E${eStr}`,
+      queryHash: generateHash(`${code}:gap:${normalized}:s${sStr}e${eStr}`),
+      countryCode: code,
+      type: 'episode',
+      tier: 1,
+      priorityScore: 95,
+      reason: `Episode gap: S${sStr}E${eStr}`,
+    });
+
+    queries.push({
+      query: `${seriesTitle} Ep ${epNum}`,
+      queryHash: generateHash(`${code}:gap:${normalized}:ep-short-${epNum}`),
+      countryCode: code,
+      type: 'episode',
+      tier: 1,
+      priorityScore: 90,
+      reason: `Episode gap: Ep ${epNum}`,
+    });
+  }
+
+  return queries.slice(0, limit * 3);
+}
+
+/**
+ * Generate channel discovery queries.
  */
 export function generateChannelQueries(
   channelTitle: string,
@@ -278,32 +482,33 @@ export function generateChannelQueries(
   limit?: number
 ): GeneratedQuery[] {
   const queries: GeneratedQuery[] = [];
+  const code = countryCode.toUpperCase();
   const normalized = normalizeString(channelTitle);
 
   queries.push({
-    query: `${channelTitle} movies`,
-    queryHash: generateHash(`${countryCode}-channel-${normalized}-movies`),
-    countryCode,
+    query: `${channelTitle} full movie`,
+    queryHash: generateHash(`${code}:channel:${normalized}:full`),
+    countryCode: code,
     type: 'channel',
     tier: 1,
     priorityScore: 100,
-    reason: `Channel: "${channelTitle}" movies`,
-  });
-
-  queries.push({
-    query: `${channelTitle} full movie`,
-    queryHash: generateHash(`${countryCode}-channel-${normalized}-full`),
-    countryCode,
-    type: 'channel',
-    tier: 1,
-    priorityScore: 95,
     reason: `Channel: "${channelTitle}" full movie`,
   });
 
   queries.push({
+    query: `${channelTitle} movies`,
+    queryHash: generateHash(`${code}:channel:${normalized}:movies`),
+    countryCode: code,
+    type: 'channel',
+    tier: 1,
+    priorityScore: 95,
+    reason: `Channel: "${channelTitle}" movies`,
+  });
+
+  queries.push({
     query: `${channelTitle} series`,
-    queryHash: generateHash(`${countryCode}-channel-${normalized}-series`),
-    countryCode,
+    queryHash: generateHash(`${code}:channel:${normalized}:series`),
+    countryCode: code,
     type: 'channel',
     tier: 2,
     priorityScore: 85,
@@ -311,21 +516,134 @@ export function generateChannelQueries(
   });
 
   queries.push({
-    query: `${channelTitle} episodes`,
-    queryHash: generateHash(`${countryCode}-channel-${normalized}-episodes`),
-    countryCode,
+    query: `${channelTitle} episode 1`,
+    queryHash: generateHash(`${code}:channel:${normalized}:ep1`),
+    countryCode: code,
     type: 'channel',
     tier: 2,
     priorityScore: 80,
-    reason: `Channel: "${channelTitle}" episodes`,
+    reason: `Channel: "${channelTitle}" episode 1`,
   });
 
-  const uniqueQueries = deduplicateByKey(queries, (q: GeneratedQuery) => q.queryHash);
-  return limit ? uniqueQueries.slice(0, limit) : uniqueQueries;
+  const unique = deduplicateByKey(queries, (q) => q.queryHash);
+  return limit ? unique.slice(0, limit) : unique;
 }
 
 /**
- * Validate country keyword configuration
+ * Smart query generation based on mode, scope, and limit.
+ * Used by Live Scanner and orchestrator to produce exact search queries.
+ */
+export function generateSmartDiscoveryQueries(
+  config: GeoCountryConfigV2,
+  options: SmartQueryOptions = {}
+): GeneratedQuery[] {
+  const mode = options.mode || 'smart';
+  const scope = options.scope || 'all';
+  const limit = options.limit || 8;
+
+  const queries: GeneratedQuery[] = [];
+
+  // Movie queries
+  if (scope === 'all' || scope === 'movies') {
+    const movieLimit = mode === 'deep' ? 20 : mode === 'incremental' ? 3 : 8;
+    queries.push(...generateMovieQueries(config, movieLimit));
+  }
+
+  // Series queries
+  if (scope === 'all' || scope === 'series') {
+    const seriesLimit = mode === 'deep' ? 15 : mode === 'incremental' ? 8 : 6;
+    queries.push(...generateSeriesQueries(config, seriesLimit));
+  }
+
+  // Episode queries for known series if provided
+  if (options.seriesTitles && options.seriesTitles.length > 0) {
+    for (const title of options.seriesTitles.slice(0, 3)) {
+      queries.push(...generateEpisodeQueries(title, config.countryCode, config, 3));
+    }
+  }
+
+  // Channel queries
+  if (options.trustedChannels && options.trustedChannels.length > 0) {
+    for (const ch of options.trustedChannels.slice(0, 2)) {
+      queries.push(...generateChannelQueries(ch.title, config.countryCode, config, 2));
+    }
+  }
+
+  // Deduplicate
+  const unique = deduplicateByKey(queries, (q) => q.queryHash);
+
+  // In incremental mode, bias towards series and episode queries
+  if (mode === 'incremental') {
+    unique.sort((a, b) => {
+      const typeWeightA = a.type === 'episode' ? 20 : a.type === 'series' ? 10 : 0;
+      const typeWeightB = b.type === 'episode' ? 20 : b.type === 'series' ? 10 : 0;
+      return b.priorityScore + typeWeightB - (a.priorityScore + typeWeightA);
+    });
+  } else {
+    unique.sort((a, b) => b.priorityScore - a.priorityScore);
+  }
+
+  return limit ? unique.slice(0, limit) : unique;
+}
+
+/**
+ * Generate all discovery queries for a country.
+ */
+export function generateAllDiscoveryQueries(
+  config: GeoCountryConfigV2,
+  options?: {
+    includeEpisodes?: boolean;
+    seriesTitles?: string[];
+    trustedChannels?: Array<{ id: string; title: string }>;
+    limits?: {
+      movie?: number;
+      series?: number;
+      episode?: number;
+      channel?: number;
+    };
+  }
+): GeneratedQuery[] {
+  const allQueries: GeneratedQuery[] = [];
+
+  // Generate movie queries
+  const movieQueries = generateMovieQueries(config, options?.limits?.movie);
+  allQueries.push(...movieQueries);
+
+  // Generate series queries
+  const seriesQueries = generateSeriesQueries(config, options?.limits?.series);
+  allQueries.push(...seriesQueries);
+
+  // Generate episode queries for known series
+  if (options?.includeEpisodes && options?.seriesTitles) {
+    for (const seriesTitle of options.seriesTitles) {
+      const episodeQueries = generateEpisodeQueries(
+        seriesTitle,
+        config.countryCode,
+        config,
+        options?.limits?.episode
+      );
+      allQueries.push(...episodeQueries);
+    }
+  }
+
+  // Generate channel queries for trusted channels
+  if (options?.trustedChannels) {
+    for (const channel of options.trustedChannels) {
+      const channelQueries = generateChannelQueries(
+        channel.title,
+        config.countryCode,
+        config,
+        options?.limits?.channel
+      );
+      allQueries.push(...channelQueries);
+    }
+  }
+
+  return allQueries;
+}
+
+/**
+ * Validate country keyword configuration.
  */
 export function validateCountryKeywords(config: GeoCountryConfigV2): {
   valid: boolean;
@@ -356,8 +674,7 @@ export function validateCountryKeywords(config: GeoCountryConfigV2): {
 }
 
 /**
- * Rank queries by performance
- * Returns queries sorted by historical yield
+ * Rank queries by performance.
  */
 export function rankQueriesByPerformance(
   queries: GeneratedQuery[],
@@ -367,17 +684,15 @@ export function rankQueriesByPerformance(
     const statsA = queryStats[a.queryHash] || { candidateCount: 0, qualifyingCount: 0 };
     const statsB = queryStats[b.queryHash] || { candidateCount: 0, qualifyingCount: 0 };
 
-    // Prioritize by qualifying results
     const qualifyingDiff = statsB.qualifyingCount - statsA.qualifyingCount;
     if (qualifyingDiff !== 0) return qualifyingDiff;
 
-    // Then by base priority score
     return b.priorityScore - a.priorityScore;
   });
 }
 
 /**
- * Deduplicate queries by content
+ * Deduplicate queries by content.
  */
 function deduplicateByKey<T>(arr: T[], keyFn: (item: T) => string): T[] {
   const seen = new Set<string>();
@@ -392,50 +707,4 @@ function deduplicateByKey<T>(arr: T[], keyFn: (item: T) => string): T[] {
   }
 
   return result;
-}
-
-/**
- * Generate all discovery queries for a country
- */
-export function generateAllDiscoveryQueries(
-  config: GeoCountryConfigV2,
-  options?: {
-    includeEpisodes?: boolean;
-    seriesTitles?: string[];
-    trustedChannels?: Array<{ id: string; title: string }>;
-    limits?: {
-      movie?: number;
-      series?: number;
-      episode?: number;
-      channel?: number;
-    };
-  }
-): GeneratedQuery[] {
-  const allQueries: GeneratedQuery[] = [];
-
-  // Generate movie queries
-  const movieQueries = generateMovieQueries(config, options?.limits?.movie);
-  allQueries.push(...movieQueries);
-
-  // Generate series queries
-  const seriesQueries = generateSeriesQueries(config, options?.limits?.series);
-  allQueries.push(...seriesQueries);
-
-  // Generate episode queries for known series
-  if (options?.includeEpisodes && options?.seriesTitles) {
-    for (const seriesTitle of options.seriesTitles) {
-      const episodeQueries = generateEpisodeQueries(seriesTitle, config.countryCode, config, options?.limits?.episode);
-      allQueries.push(...episodeQueries);
-    }
-  }
-
-  // Generate channel queries for trusted channels
-  if (options?.trustedChannels) {
-    for (const channel of options.trustedChannels) {
-      const channelQueries = generateChannelQueries(channel.title, config.countryCode, config, options?.limits?.channel);
-      allQueries.push(...channelQueries);
-    }
-  }
-
-  return allQueries;
 }

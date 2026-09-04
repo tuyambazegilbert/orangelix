@@ -22,3 +22,5 @@ export * from './channelAnalyzer';
 export * from './publicationEngine';
 export * from './discoveryEngine';
 export * from './adapters';
+export * from './adminService';
+export * from './metadataReasoningEngine';

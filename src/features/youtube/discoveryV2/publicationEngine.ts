@@ -349,3 +349,71 @@ export function formatThresholdMessage(score: number, config = DISCOVERY_V2_SCOR
 
   return `${PENDING_REVIEW_LOWER - score} points below pending-review threshold`;
 }
+
+/**
+ * Universal publication decision evaluator conforming to Section 26
+ */
+export function evaluatePublicationDecision(
+  candidate: {
+    overallScore?: number;
+    score?: number;
+    classification?: GeoContentType;
+    contentType?: GeoContentType;
+    isEmbeddable?: boolean;
+    embeddable?: boolean;
+    channelTrust?: ChannelTrust;
+    hardRejectionReasons?: string[];
+    hardGateFailures?: string[];
+    seriesId?: string | null;
+    seriesConfidence?: number;
+    episodeConfidence?: number;
+    countryScore?: number;
+    channelTrustScore?: number;
+  },
+  config = DISCOVERY_V2_SCORING_CONFIG
+): {
+  overallScore: number;
+  decision: 'published' | 'pending_review' | 'rejected' | 'unavailable';
+  status: 'published' | 'pending_review' | 'rejected' | 'unavailable';
+  reasons: string[];
+  hardGateFailures: string[];
+  classification: GeoContentType;
+  countryScore: number;
+  seriesConfidence: number;
+  channelTrustScore: number;
+} {
+  const score = clamp(candidate.overallScore ?? candidate.score ?? 0, 0, 100);
+  const type = candidate.contentType || candidate.classification || 'unknown';
+  const embeddable = candidate.isEmbeddable ?? candidate.embeddable ?? true;
+  const trust = candidate.channelTrust || 'pending';
+  const hardGates = candidate.hardGateFailures || candidate.hardRejectionReasons || [];
+  const seriesConfidence = candidate.seriesConfidence ?? 100;
+  const episodeConfidence = candidate.episodeConfidence ?? 100;
+
+  const decision =
+    type === 'episode'
+      ? decidePublicationForEpisodeV2(
+          score,
+          candidate.seriesId || undefined,
+          seriesConfidence,
+          episodeConfidence,
+          trust,
+          embeddable,
+          hardGates,
+          config
+        )
+      : decidePublicationV2(score, type, trust, embeddable, hardGates, config);
+
+  return {
+    overallScore: score,
+    decision: decision.status,
+    status: decision.status,
+    reasons: decision.reasoning ? [decision.reasoning] : [],
+    hardGateFailures: decision.hardGateFailures || [],
+    classification: type,
+    countryScore: candidate.countryScore ?? 0,
+    seriesConfidence,
+    channelTrustScore: candidate.channelTrustScore ?? 0,
+  };
+}
+

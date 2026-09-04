@@ -239,6 +239,7 @@ export default function AdvancedCinematicPlayer({
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
+          playsinline: 1,
           origin: window.location.origin,
         },
         events: {
@@ -585,7 +586,7 @@ export default function AdvancedCinematicPlayer({
   return (
     <div
       className={`relative w-full transition-all duration-500 ${
-        isTheaterMode ? 'max-w-none px-0' : 'max-w-6xl mx-auto'
+        isTheaterMode ? 'max-w-none px-0' : 'w-full'
       }`}
     >
       {/* 1. Dynamic Ambient Immersion Backglow */}
@@ -608,13 +609,14 @@ export default function AdvancedCinematicPlayer({
         onTouchEnd={handleTouchEnd}
         onMouseMove={() => !isScreenLocked && setControlsVisible(true)}
         onMouseLeave={() => isPlaying && !isScreenLocked && setControlsVisible(false)}
-        className={`group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/15 bg-black shadow-[0_25px_70px_rgba(0,0,0,0.85)] aspect-video w-full select-none ${
-          isFullscreen ? 'rounded-none border-none' : ''
+        style={{ aspectRatio: '16 / 9' }}
+        className={`group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/15 bg-black shadow-[0_25px_70px_rgba(0,0,0,0.85)] w-full select-none ${
+          isFullscreen ? 'rounded-none border-none min-h-screen max-h-screen' : 'max-h-[calc(100vh-210px)]'
         }`}
       >
         {/* Video Canvas Layer with Filtered Brightness */}
         <div
-          className="w-full h-full"
+          className="absolute inset-0 w-full h-full"
           style={{
             filter: `brightness(${brightness})`,
           }}
@@ -657,11 +659,14 @@ export default function AdvancedCinematicPlayer({
             />
           )}
 
-          {/* Chromeless YouTube Stream Engine Container */}
+          {/* Chromeless YouTube Stream Engine Container (Crops out native YouTube header and watermark) */}
           {activeEngine === 'youtube' && (
-            <div className="relative w-full h-full pointer-events-none">
-              <div ref={ytContainerRef} className="w-full h-full pointer-events-none scale-105" />
-              {/* Click Interceptor for custom play/pause */}
+            <div className="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center pointer-events-none select-none">
+              <div
+                ref={ytContainerRef}
+                className="w-[115%] h-[115%] min-w-[115%] min-h-[115%] pointer-events-none transform origin-center shrink-0 [&>iframe]:!w-full [&>iframe]:!h-full [&>iframe]:!border-0"
+              />
+              {/* Click / Tap Interceptor */}
               <div
                 className="absolute inset-0 z-10 cursor-pointer pointer-events-auto"
                 onClick={togglePlay}
@@ -671,14 +676,18 @@ export default function AdvancedCinematicPlayer({
         </div>
 
         {/* 3. Official OrangeFlix Logo & Brand Watermark Overlay */}
-        <div className="absolute top-4 right-4 sm:top-5 sm:right-6 z-20 pointer-events-none flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/40">
-            <span className="font-black text-xs">O</span>
+        <div
+          className={`absolute top-3 right-3 sm:top-5 sm:right-6 z-20 pointer-events-none flex items-center gap-1.5 transition-opacity duration-200 ${
+            controlsVisible ? 'opacity-0 sm:opacity-80' : 'opacity-80'
+          }`}
+        >
+          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/40">
+            <span className="font-black text-[10px] sm:text-xs">O</span>
           </div>
-          <span className="text-[11px] font-black tracking-widest text-white drop-shadow-md">
+          <span className="text-[10px] sm:text-[11px] font-black tracking-widest text-white drop-shadow-md">
             ORANGE<span className="text-orange-500">FLIX</span>
           </span>
-          <span className="bg-orange-500/20 text-orange-300 border border-orange-500/30 text-[9px] px-1 py-0.2 rounded font-mono font-bold">
+          <span className="bg-orange-500/20 text-orange-300 border border-orange-500/30 text-[8px] sm:text-[9px] px-1 py-0.2 rounded font-mono font-bold">
             4K HDR
           </span>
         </div>
@@ -699,14 +708,14 @@ export default function AdvancedCinematicPlayer({
               </div>
             )}
             {gestureHUD.type === 'seek-left' && (
-              <div className="absolute left-12 flex flex-col items-center gap-1 bg-black/75 backdrop-blur-md px-5 py-3 rounded-2xl text-orange-400 animate-in fade-in zoom-in duration-200">
-                <RotateCcw className="w-7 h-7 animate-spin" />
+              <div className="absolute left-6 sm:left-12 flex flex-col items-center gap-1 bg-black/75 backdrop-blur-md px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl text-orange-400 animate-in fade-in zoom-in duration-200">
+                <RotateCcw className="w-6 h-6 sm:w-7 sm:h-7 animate-spin" />
                 <span className="text-xs font-black">- {gestureHUD.value}</span>
               </div>
             )}
             {gestureHUD.type === 'seek-right' && (
-              <div className="absolute right-12 flex flex-col items-center gap-1 bg-black/75 backdrop-blur-md px-5 py-3 rounded-2xl text-orange-400 animate-in fade-in zoom-in duration-200">
-                <RotateCw className="w-7 h-7 animate-spin" />
+              <div className="absolute right-6 sm:right-12 flex flex-col items-center gap-1 bg-black/75 backdrop-blur-md px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl text-orange-400 animate-in fade-in zoom-in duration-200">
+                <RotateCw className="w-6 h-6 sm:w-7 sm:h-7 animate-spin" />
                 <span className="text-xs font-black">+ {gestureHUD.value}</span>
               </div>
             )}
@@ -716,43 +725,43 @@ export default function AdvancedCinematicPlayer({
         {/* 5. Screen Lock Overlay Icon */}
         <button
           onClick={() => setIsScreenLocked(!isScreenLocked)}
-          className={`absolute left-4 top-16 sm:top-20 z-30 w-8 h-8 rounded-xl flex items-center justify-center transition ${
+          className={`absolute left-3 sm:left-4 top-14 sm:top-20 z-30 w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition ${
             isScreenLocked
               ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/50'
               : 'bg-black/50 text-slate-400 hover:text-white border border-white/10 opacity-0 group-hover:opacity-100'
           }`}
           title={isScreenLocked ? 'Unlock Screen Controls' : 'Lock Screen Controls'}
         >
-          {isScreenLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+          {isScreenLocked ? <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Unlock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
         </button>
 
         {/* 6. Top Floating Glassmorphism Title Bar */}
         <div
-          className={`absolute inset-x-0 top-0 z-30 p-4 sm:p-6 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between transition-opacity duration-300 ${
+          className={`absolute inset-x-0 top-0 z-30 px-3 py-2 sm:p-5 bg-gradient-to-b from-black/90 via-black/50 to-transparent flex items-center justify-between gap-2 transition-opacity duration-300 ${
             controlsVisible && !isScreenLocked ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
-          <div className="flex items-center gap-2">
-            <Badge className="bg-orange-500/90 text-white font-bold text-[10px] px-2 py-0.5 shadow-md">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+            <Badge className="bg-orange-500 text-white font-bold text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.2 sm:py-0.5 shadow-md shrink-0">
               Cinema Pro
             </Badge>
             {isOffline && (
-              <Badge variant="outline" className="border-amber-400/50 bg-amber-500/10 text-amber-300 text-[10px] flex items-center gap-1">
-                <WifiOff className="w-3 h-3" /> Offline Mode
+              <Badge variant="outline" className="border-amber-400/50 bg-amber-500/10 text-amber-300 text-[9px] sm:text-[10px] flex items-center gap-1 shrink-0">
+                <WifiOff className="w-3 h-3" /> Offline
               </Badge>
             )}
-            <h2 className="text-xs sm:text-sm font-bold text-white tracking-wide drop-shadow truncate max-w-xs sm:max-w-md">
+            <h2 className="text-xs sm:text-sm font-bold text-white tracking-wide drop-shadow truncate">
               {title}
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Pop-up Mini Player (Allows playing while chatting on WhatsApp or browsing) */}
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Pop-up Mini Player */}
             <Button
               variant="ghost"
               size="sm"
               onClick={toggleSystemPiP}
-              className="h-7 px-2 text-[11px] rounded-lg border border-white/10 bg-black/40 text-slate-300 hover:text-white"
+              className="hidden sm:inline-flex h-7 px-2 text-[11px] rounded-lg border border-white/10 bg-black/40 text-slate-300 hover:text-white"
               title="Pop-up Mini Player (Play over WhatsApp, chats & other apps)"
             >
               <PictureInPicture className="w-3.5 h-3.5 mr-1 text-orange-400" /> Pop-Up
@@ -763,7 +772,7 @@ export default function AdvancedCinematicPlayer({
               variant="ghost"
               size="sm"
               onClick={() => setAmbientGlow(!ambientGlow)}
-              className={`h-7 px-2 text-[11px] rounded-lg border border-white/10 ${
+              className={`hidden md:inline-flex h-7 px-2 text-[11px] rounded-lg border border-white/10 ${
                 ambientGlow ? 'bg-orange-500/20 text-orange-300' : 'bg-black/40 text-slate-400'
               }`}
               title="Toggle Ambient Immersion Glow"
@@ -773,31 +782,67 @@ export default function AdvancedCinematicPlayer({
           </div>
         </div>
 
-        {/* 7. Center Glowing Play/Pause Pulse Button */}
+        {/* 7. Center Cinema Controls Cluster (-10s, Play/Pause, +10s) */}
         {!isScreenLocked && (
-          <button
-            onClick={togglePlay}
-            aria-label={isPlaying ? 'Pause' : 'Play'}
-            className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-tr from-orange-600 to-amber-500 text-white flex items-center justify-center shadow-2xl shadow-orange-500/50 backdrop-blur-md transform transition-all duration-300 hover:scale-110 ${
-              isPlaying ? 'opacity-0 scale-90 pointer-events-none' : 'opacity-100 scale-100 pointer-events-auto'
+          <div
+            className={`absolute inset-0 z-20 flex items-center justify-center gap-6 sm:gap-12 pointer-events-none transition-all duration-200 ${
+              controlsVisible ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
             }`}
           >
-            {isPlaying ? (
-              <Pause className="w-8 h-8 sm:w-10 sm:h-10 fill-current" />
-            ) : (
-              <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1" />
-            )}
-          </button>
+            {/* Rewind 10s Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                seekRelative(-10);
+              }}
+              className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/85 text-white flex flex-col items-center justify-center backdrop-blur-md border border-white/20 transition transform hover:scale-110 active:scale-95 shadow-xl"
+              title="Rewind 10 seconds"
+              aria-label="Rewind 10 seconds"
+            >
+              <RotateCcw className="w-4 h-4 sm:w-6 sm:h-6 text-slate-200" />
+              <span className="text-[8px] sm:text-[10px] font-black font-mono text-orange-400 -mt-0.5">10</span>
+            </button>
+
+            {/* Main Center Play / Pause Pulse Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+              }}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              className="w-12 h-12 xs:w-14 xs:h-14 sm:w-18 sm:h-18 p-3 sm:p-4 rounded-full bg-gradient-to-tr from-orange-600 to-amber-500 text-white flex items-center justify-center shadow-2xl shadow-orange-500/50 backdrop-blur-md transform transition-all duration-200 hover:scale-110 active:scale-95 border-2 border-white/25"
+            >
+              {isPlaying ? (
+                <Pause className="w-5 h-5 xs:w-6 xs:h-6 sm:w-8 sm:h-8 fill-current" />
+              ) : (
+                <Play className="w-5 h-5 xs:w-6 xs:h-6 sm:w-8 sm:h-8 fill-current ml-0.5" />
+              )}
+            </button>
+
+            {/* Fast Forward 10s Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                seekRelative(10);
+              }}
+              className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/85 text-white flex flex-col items-center justify-center backdrop-blur-md border border-white/20 transition transform hover:scale-110 active:scale-95 shadow-xl"
+              title="Fast forward 10 seconds"
+              aria-label="Fast forward 10 seconds"
+            >
+              <RotateCw className="w-4 h-4 sm:w-6 sm:h-6 text-slate-200" />
+              <span className="text-[8px] sm:text-[10px] font-black font-mono text-orange-400 -mt-0.5">10</span>
+            </button>
+          </div>
         )}
 
-        {/* 8. Custom Bottom Deck Controls Bar */}
+        {/* 8. Custom Bottom Deck Controls Bar (Clean & Responsive) */}
         <div
-          className={`absolute inset-x-0 bottom-0 z-30 px-4 pb-4 pt-16 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-opacity duration-300 ${
+          className={`absolute inset-x-0 bottom-0 z-30 px-2.5 sm:px-5 pb-2 sm:pb-3.5 pt-6 sm:pt-12 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-opacity duration-300 ${
             controlsVisible && !isScreenLocked ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
           {/* Progress Timeline Scrubber */}
-          <div className="relative mb-3.5 group/seek flex items-center">
+          <div className="relative mb-1.5 sm:mb-3 group/seek flex items-center">
             {/* Buffered Bar */}
             <div
               className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-white/20 rounded-full pointer-events-none"
@@ -821,48 +866,32 @@ export default function AdvancedCinematicPlayer({
           </div>
 
           {/* Controls Lower Row */}
-          <div className="flex items-center justify-between gap-2 text-white">
+          <div className="flex items-center justify-between gap-1 sm:gap-2 text-white">
             {/* Left Controls Deck */}
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
               <button
                 onClick={togglePlay}
-                className="w-9 h-9 rounded-xl bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition shadow-md shadow-orange-500/20"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center transition shadow-md shadow-orange-500/20 shrink-0"
                 aria-label={isPlaying ? 'Pause' : 'Play'}
               >
-                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
-              </button>
-
-              <button
-                onClick={() => seekRelative(-10)}
-                className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"
-                title="Rewind 10 seconds (J / ←)"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => seekRelative(10)}
-                className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"
-                title="Fast forward 10 seconds (L / →)"
-              >
-                <RotateCw className="w-4 h-4" />
+                {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
               </button>
 
               {/* Clear Sound Button & Audio Level Slider */}
-              <div className="flex items-center gap-1.5 bg-white/[.06] border border-white/10 px-2 py-1 rounded-xl">
+              <div className="flex items-center gap-1 bg-white/[.06] border border-white/10 px-1.5 py-0.5 rounded-lg shrink-0">
                 <button
                   onClick={toggleMute}
                   className="text-slate-300 hover:text-white flex items-center gap-1"
                   title="Clear Sound / Mute (M)"
                 >
                   {isMuted || volume === 0 ? (
-                    <VolumeX className="w-4 h-4 text-red-400" />
+                    <VolumeX className="w-3.5 h-3.5 text-red-400" />
                   ) : volume > 0.6 ? (
-                    <Volume2 className="w-4 h-4 text-orange-400" />
+                    <Volume2 className="w-3.5 h-3.5 text-orange-400" />
                   ) : (
-                    <Volume1 className="w-4 h-4 text-orange-300" />
+                    <Volume1 className="w-3.5 h-3.5 text-orange-300" />
                   )}
-                  <span className="text-[10px] font-mono font-bold text-slate-200">
+                  <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-200">
                     {isMuted ? '0%' : `${Math.round(volume * 100)}%`}
                   </span>
                 </button>
@@ -873,27 +902,27 @@ export default function AdvancedCinematicPlayer({
                   step={0.05}
                   value={isMuted ? 0 : volume}
                   onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  className="w-12 sm:w-16 h-1 appearance-none bg-white/20 rounded-full cursor-pointer accent-orange-500"
+                  className="hidden md:inline-block w-12 sm:w-16 h-1 appearance-none bg-white/20 rounded-full cursor-pointer accent-orange-500"
                   aria-label="Volume Slider"
                 />
               </div>
 
               {/* Time Display */}
-              <span className="text-[11px] sm:text-xs font-mono text-slate-300 tabular-nums">
+              <span className="text-[9px] sm:text-xs font-mono text-slate-300 tabular-nums shrink-0 truncate">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
             </div>
 
             {/* Right Side Settings & Tools Deck */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* Brightness Adjustment Tool */}
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              {/* Brightness Adjustment Tool (hidden on xs) */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-amber-400 transition"
+                    className="hidden sm:flex w-7 h-7 sm:w-8 sm:h-8 rounded-lg hover:bg-white/10 items-center justify-center text-slate-300 hover:text-amber-400 transition"
                     title={`Brightness (${Math.round(brightness * 100)}%)`}
                   >
-                    <Sun className="w-4 h-4" />
+                    <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-gray-900/95 border-gray-800 text-white w-48 p-3 backdrop-blur-xl space-y-2">
@@ -932,7 +961,7 @@ export default function AdvancedCinematicPlayer({
                 size="sm"
                 onClick={handleDownload}
                 disabled={Boolean(alreadyDownloaded || downloadState?.status === 'downloading')}
-                className={`h-8 px-2.5 rounded-xl border text-[11px] font-semibold transition ${
+                className={`h-7 sm:h-8 px-1.5 sm:px-2.5 rounded-lg sm:rounded-xl border text-[10px] sm:text-[11px] font-semibold transition ${
                   alreadyDownloaded
                     ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
                     : downloadState?.status === 'downloading'
@@ -943,30 +972,40 @@ export default function AdvancedCinematicPlayer({
               >
                 {alreadyDownloaded ? (
                   <>
-                    <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Downloaded
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> <span className="hidden sm:inline ml-1">Downloaded</span>
                   </>
                 ) : downloadState?.status === 'downloading' ? (
                   <>
-                    <Download className="w-3.5 h-3.5 mr-1 animate-bounce" /> {downloadState.progress}%
+                    <Download className="w-3.5 h-3.5 animate-bounce text-orange-400" /> <span className="text-[9px] ml-0.5">{downloadState.progress}%</span>
                   </>
                 ) : (
                   <>
-                    <Download className="w-3.5 h-3.5 mr-1" /> Download
+                    <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline ml-1">Download</span>
                   </>
                 )}
               </Button>
 
-              {/* Settings Dropdown: Speed, Quality, Sleep Timer, Aspect Ratio */}
+              {/* Settings Dropdown: Speed, Quality, Sleep Timer, Aspect Ratio, Pop-Up */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white"
                     title="Cinema Settings"
                   >
-                    <Settings className="w-4 h-4" />
+                    <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-gray-900/95 border-gray-800 text-white w-52 backdrop-blur-xl">
+                  <DropdownMenuItem onClick={toggleSystemPiP} className="text-xs cursor-pointer flex items-center gap-2">
+                    <PictureInPicture className="w-3.5 h-3.5 text-orange-400" />
+                    <span>Pop-Up Mini Player</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setAmbientGlow(!ambientGlow)} className="text-xs cursor-pointer flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-orange-400" />
+                    <span>Ambient Glow: {ambientGlow ? 'On' : 'Off'}</span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator className="bg-gray-800" />
                   <DropdownMenuLabel className="text-xs text-orange-400">Playback Speed</DropdownMenuLabel>
                   {[0.5, 0.75, 1, 1.25, 1.5, 2].map((spd) => (
                     <DropdownMenuItem
@@ -1013,19 +1052,10 @@ export default function AdvancedCinematicPlayer({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* Pop-up Video Mini Player Trigger */}
-              <button
-                onClick={triggerInAppPopUp}
-                className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white"
-                title="Dock to Floating Mini Player"
-              >
-                <PictureInPicture2 className="w-4 h-4" />
-              </button>
-
               {/* Theater Mode Button */}
               <button
                 onClick={() => setIsTheaterMode(!isTheaterMode)}
-                className={`w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition ${
+                className={`hidden sm:flex w-8 h-8 rounded-lg hover:bg-white/10 items-center justify-center transition ${
                   isTheaterMode ? 'text-orange-400' : 'text-slate-300 hover:text-white'
                 }`}
                 title="Theater Mode (T)"
@@ -1036,10 +1066,10 @@ export default function AdvancedCinematicPlayer({
               {/* Fullscreen Button */}
               <button
                 onClick={toggleFullscreen}
-                className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white"
                 title="Toggle Fullscreen (F)"
               >
-                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                {isFullscreen ? <Minimize className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Maximize className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
               </button>
             </div>
           </div>

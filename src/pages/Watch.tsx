@@ -16,6 +16,7 @@ import {
   BookOpen,
   Download,
   CheckCircle2,
+  Flame,
 } from 'lucide-react';
 import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { useMovieDetails, useSeasonDetails, useSeriesDetails, useTrending } from '@/hooks/use-tmdb';
@@ -43,18 +44,22 @@ const progressKey = (id: string) => `orangeflix_progress_${id}`;
 
 function WatchSkeleton() {
   return (
-    <main className="page-wrap !pt-2 sm:!pt-4 max-w-6xl mx-auto px-3 sm:px-6 space-y-6 animate-pulse">
-      <div className="aspect-video w-full rounded-2xl bg-white/10 border border-white/10" />
-      <div className="space-y-4">
-        <div className="h-8 w-2/3 bg-white/20 rounded-xl" />
-        <div className="flex gap-2">
-          <div className="h-5 w-20 bg-orange-500/20 rounded" />
-          <div className="h-5 w-16 bg-white/10 rounded" />
-          <div className="h-5 w-24 bg-white/10 rounded" />
+    <main className="max-w-[1720px] mx-auto px-3 sm:px-5 lg:px-8 pt-3 sm:pt-4 space-y-4 animate-pulse">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 xl:gap-8">
+        <div className="lg:col-span-8 space-y-4">
+          <div className="aspect-video w-full rounded-2xl bg-white/10 border border-white/10" />
+          <div className="h-8 w-2/3 bg-white/20 rounded-xl" />
+          <div className="flex gap-2">
+            <div className="h-5 w-20 bg-orange-500/20 rounded" />
+            <div className="h-5 w-16 bg-white/10 rounded" />
+            <div className="h-5 w-24 bg-white/10 rounded" />
+          </div>
         </div>
-        <div className="space-y-2 pt-2">
-          <div className="h-4 w-full bg-white/10 rounded" />
-          <div className="h-4 w-5/6 bg-white/10 rounded" />
+        <div className="lg:col-span-4 space-y-3">
+          <div className="h-6 w-1/3 bg-white/20 rounded" />
+          <div className="h-20 w-full bg-white/10 rounded-xl" />
+          <div className="h-20 w-full bg-white/10 rounded-xl" />
+          <div className="h-20 w-full bg-white/10 rounded-xl" />
         </div>
       </div>
     </main>
@@ -145,29 +150,42 @@ export default function Watch() {
     }
   }, [media, id, currentUser]);
 
-  if (movie.isLoading || series.isLoading) return <WatchSkeleton />;
-  if (!media)
-    return (
-      <main className="page-wrap grid min-h-[65vh] place-items-center text-center">
-        <div>
-          <h1 className="text-2xl font-bold text-white">This title isn’t available</h1>
-          <p className="mt-2 text-slate-400">It may have been removed or the link may be invalid.</p>
-          <Link to="/movies" className="premium-button mt-5 inline-flex rounded-lg px-4 py-2 text-sm font-semibold">
-            Browse movies
-          </Link>
-        </div>
-      </main>
-    );
-
-  const rawId = id || `${media.mediaType}-${media.tmdbId}`;
+  const rawId = id || (media ? `${media.mediaType}-${media.tmdbId}` : '');
   const savedProgress = Number(localStorage.getItem(progressKey(rawId)) || 0);
   const directVideo = legacy?.videoUrl || null;
 
-  const writers = media.crew.filter((person) => /writer|screenplay/i.test(person.job)).slice(0, 2);
-  const director = media.crew.find((person) => person.job === 'Director');
+  const writers = media ? media.crew.filter((person) => /writer|screenplay/i.test(person.job)).slice(0, 2) : [];
+  const director = media ? media.crew.find((person) => person.job === 'Director') : undefined;
+
+  const upNextList = useMemo(() => {
+    if (!media) return [];
+    const recs = media.recommendations || [];
+    const sims = media.similar || [];
+    const trends = trending.data?.items || [];
+    const combined: MediaDetail[] = [];
+    const seen = new Set<string | number>();
+
+    const addItems = (list: any[]) => {
+      for (const item of list) {
+        if (!item) continue;
+        const key = item.tmdbId || item.id;
+        if (key && !seen.has(key) && String(item.id) !== String(rawId) && String(item.tmdbId) !== String(media.tmdbId)) {
+          seen.add(key);
+          combined.push(item);
+        }
+        if (combined.length >= 8) break;
+      }
+    };
+
+    addItems(recs);
+    if (combined.length < 8) addItems(sims);
+    if (combined.length < 8) addItems(trends);
+
+    return combined;
+  }, [media, trending.data?.items, rawId]);
 
   const save = () => {
-    if (!currentUser) return toast.error('Sign in to save this title');
+    if (!currentUser || !media) return toast.error('Sign in to save this title');
     if (favorite) {
       MovieService.removeFromFavorites(rawId, currentUser.id);
       void FirebaseData.removeWatchlist(currentUser.id, rawId);
@@ -186,6 +204,7 @@ export default function Watch() {
   };
 
   const persistProgress = (seconds: number, total: number) => {
+    if (!media) return;
     localStorage.setItem(progressKey(rawId), String(Math.floor(seconds)));
     if (currentUser) void FirebaseData.setHistory(currentUser.id, media, seconds, total);
     Analytics.logEvent('watch_progress', {
@@ -220,7 +239,7 @@ export default function Watch() {
 
   const submitReview = (event: FormEvent) => {
     event.preventDefault();
-    if (!currentUser) return toast.error('Sign in to write a review');
+    if (!currentUser || !media) return toast.error('Sign in to write a review');
     if (!review.trim()) return;
     const entry = MovieService.addReview({
       movieId: rawId,
@@ -235,290 +254,466 @@ export default function Watch() {
     toast.success('Review published');
   };
 
+  if (movie.isLoading || series.isLoading) return <WatchSkeleton />;
+  if (!media)
+    return (
+      <main className="page-wrap grid min-h-[65vh] place-items-center text-center">
+        <div>
+          <h1 className="text-2xl font-bold text-white">This title isn’t available</h1>
+          <p className="mt-2 text-slate-400">It may have been removed or the link may be invalid.</p>
+          <Link to="/movies" className="premium-button mt-5 inline-flex rounded-lg px-4 py-2 text-sm font-semibold">
+            Browse movies
+          </Link>
+        </div>
+      </main>
+    );
+
   return (
     <div className="min-h-screen pb-16">
-      {/* Player Header */}
-      <div className="relative overflow-hidden border-b border-white/[.07]">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-25 blur-2xl"
-          style={{ backgroundImage: `url(${media.backdropUrl || media.imageUrl})` }}
-        />
-        <main className="page-wrap relative pt-5">
+      <div className="max-w-[1720px] mx-auto px-3 sm:px-5 lg:px-8 pt-3 sm:pt-4">
+        {/* Navigation & Breadcrumb Header */}
+        <div className="flex items-center justify-between gap-3 mb-3 sm:mb-4">
           <button
             onClick={() => navigate(-1)}
-            className="mb-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-white transition"
           >
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
-          <CinematicPlayer
-            id={rawId}
-            title={media.title}
-            poster={media.posterUrl || media.imageUrl}
-            backdropUrl={media.backdropUrl || media.imageUrl}
-            videoUrl={directVideo}
-            trailerKey={!directVideo ? media.trailerKey : null}
-            youtubeVideoId={!directVideo ? media.trailerKey : null}
-            durationMinutes={media.duration || undefined}
-            initialProgress={savedProgress}
-            onProgress={persistProgress}
-          />
-        </main>
-      </div>
-
-      {/* Main Content Area */}
-      <main className="page-wrap pt-8 space-y-12">
-        <section className="grid gap-8 border-b border-white/[.08] pb-8 lg:grid-cols-[minmax(0,1fr)_270px]">
-          <div>
-            <p className="section-eyebrow mb-2">{media.mediaType === 'tv' ? 'TV series' : 'Feature film'}</p>
-            <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">{media.title}</h1>
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-400">
-              <span className="flex items-center gap-1 font-semibold text-white">
-                <Star className="h-4 w-4 fill-orange-400 text-orange-400" />
-                {media.voteAverage.toFixed(1)}
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2.5 py-0.5 text-[11px] font-bold text-orange-400 uppercase tracking-wider">
+              {media.mediaType === 'tv' ? 'TV Series' : 'Feature Film'}
+            </span>
+            {media.releaseYear && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
+                {media.releaseYear}
               </span>
-              <span>{media.releaseYear || 'New release'}</span>
-              <span>{duration(media.duration)}</span>
-              <span className="rounded border border-white/[.17] px-1.5 py-0.5 text-[10px] font-semibold">
-                {media.mediaType === 'tv' ? 'SERIES' : 'PG-13'}
-              </span>
-            </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {media.genres.map((genre) => (
-                <span className="rounded-full border border-white/[.1] bg-white/[.035] px-3 py-1 text-xs text-slate-300" key={genre}>
-                  {genre}
-                </span>
-              ))}
-            </div>
-            <p className={`mt-5 max-w-3xl text-sm leading-6 text-slate-300 ${expanded ? '' : 'line-clamp-3'}`}>
-              {media.description}
-            </p>
-            {media.description.length > 170 && (
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="mt-2 text-sm font-semibold text-orange-400 hover:text-orange-300"
-              >
-                {expanded ? 'Read less' : 'Read more'}
-              </button>
             )}
-            <div className="mt-6 flex flex-wrap gap-2">
-              <button
-                onClick={save}
-                className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${
-                  favorite
-                    ? 'border-orange-400/40 bg-orange-400/10 text-orange-300'
-                    : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
-                }`}
-              >
-                <BookmarkPlus className="h-4 w-4" />
-                {favorite ? 'In watchlist' : 'Watchlist'}
-              </button>
-              <button
-                onClick={save}
-                className="grid h-9 w-9 place-items-center rounded-lg border border-white/[.13] bg-white/[.04] text-slate-300 hover:bg-white/[.09]"
-                aria-label="Favorite"
-              >
-                <Heart className={`h-4 w-4 ${favorite ? 'fill-orange-400 text-orange-400' : ''}`} />
-              </button>
-              {/* Download for Offline Button */}
-              <button
-                onClick={() => {
-                  void startDownload({
-                    id: rawId,
-                    title: media.title,
-                    mediaType: media.mediaType === 'tv' ? 'tv' : 'movie',
-                    posterUrl: media.posterUrl || media.imageUrl,
-                    backdropUrl: media.backdropUrl || media.imageUrl,
-                    duration: media.duration || undefined,
-                    releaseYear: media.releaseYear,
-                    rating: media.voteAverage,
-                    genres: media.genres,
-                    videoUrl: directVideo || undefined,
-                    youtubeVideoId: media.trailerKey || undefined,
-                  });
-                }}
-                disabled={isDownloaded(rawId) || getDownloadProgress(rawId)?.status === 'downloading'}
-                className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
-                  isDownloaded(rawId)
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                    : getDownloadProgress(rawId)?.status === 'downloading'
-                    ? 'border-orange-500/40 bg-orange-500/10 text-orange-400 animate-pulse'
-                    : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
-                }`}
-              >
-                {isDownloaded(rawId) ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Downloaded (Offline)
-                  </>
-                ) : getDownloadProgress(rawId)?.status === 'downloading' ? (
-                  <>
-                    <Download className="h-4 w-4 animate-bounce" /> {getDownloadProgress(rawId)?.progress}%
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4" /> Download for Offline
-                  </>
+          </div>
+        </div>
+
+        {/* 1. Top Section: 2-Column Responsive High-Density Player & Queue Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 xl:gap-8 items-start">
+          {/* Left Column (Player, Title, Actions, Synopsis) */}
+          <div className="lg:col-span-8 xl:col-span-8 2xl:col-span-8 space-y-4">
+            {/* Cinematic Player */}
+            <div className="w-full">
+              <CinematicPlayer
+                id={rawId}
+                title={media.title}
+                poster={media.posterUrl || media.imageUrl}
+                backdropUrl={media.backdropUrl || media.imageUrl}
+                videoUrl={directVideo}
+                trailerKey={!directVideo ? media.trailerKey : null}
+                youtubeVideoId={!directVideo ? media.trailerKey : null}
+                durationMinutes={media.duration || undefined}
+                initialProgress={savedProgress}
+                onProgress={persistProgress}
+              />
+            </div>
+
+            {/* Title & Metadata */}
+            <div className="space-y-3 pt-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-white">
+                  {media.title}
+                </h1>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="flex items-center gap-1 rounded-lg bg-orange-500/15 border border-orange-500/30 px-2.5 py-1 text-xs font-bold text-orange-400">
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                    {media.voteAverage.toFixed(1)} / 10
+                  </span>
+                  <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-300">
+                    {media.mediaType === 'tv' ? 'SERIES' : 'PG-13'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Details & Tags */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-400">
+                {director && (
+                  <span className="text-slate-300">
+                    Directed by <strong className="text-white">{director.name}</strong>
+                  </span>
                 )}
-              </button>
-              <button
-                onClick={() => {
-                  void navigator.clipboard?.writeText(window.location.href);
-                  Analytics.logEvent('share', { userId: currentUser?.id, entityId: rawId, entityTitle: media.title });
-                  toast.success('Link copied');
-                }}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/[.13] bg-white/[.04] px-3 text-xs font-semibold text-slate-300 hover:bg-white/[.09]"
-              >
-                <Share2 className="h-4 w-4" /> Share
-              </button>
+                {director && <span>•</span>}
+                <span>{media.releaseYear || 'New release'}</span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Clock3 className="h-3.5 w-3.5 text-orange-400" />
+                  {duration(media.duration)}
+                </span>
+                {media.genres.length > 0 && <span>•</span>}
+                <div className="flex flex-wrap gap-1.5">
+                  {media.genres.map((genre) => (
+                    <span
+                      key={genre}
+                      className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-300"
+                    >
+                      {genre}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Deck */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/[0.07]">
+                <button
+                  onClick={save}
+                  className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
+                    favorite
+                      ? 'border-orange-400/40 bg-orange-400/15 text-orange-300'
+                      : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
+                  }`}
+                >
+                  <BookmarkPlus className="h-4 w-4" />
+                  {favorite ? 'In Watchlist' : 'Watchlist'}
+                </button>
+
+                <button
+                  onClick={save}
+                  className="grid h-9 w-9 place-items-center rounded-xl border border-white/[.13] bg-white/[.04] text-slate-300 hover:bg-white/[.09] transition"
+                  aria-label="Favorite"
+                >
+                  <Heart className={`h-4 w-4 ${favorite ? 'fill-rose-500 text-rose-500' : ''}`} />
+                </button>
+
+                {/* Offline Download button */}
+                <button
+                  onClick={() => {
+                    void startDownload({
+                      id: rawId,
+                      title: media.title,
+                      mediaType: media.mediaType === 'tv' ? 'tv' : 'movie',
+                      posterUrl: media.posterUrl || media.imageUrl,
+                      backdropUrl: media.backdropUrl || media.imageUrl,
+                      duration: media.duration || undefined,
+                      releaseYear: media.releaseYear,
+                      rating: media.voteAverage,
+                      genres: media.genres,
+                      videoUrl: directVideo || undefined,
+                      youtubeVideoId: media.trailerKey || undefined,
+                    });
+                  }}
+                  disabled={isDownloaded(rawId) || getDownloadProgress(rawId)?.status === 'downloading'}
+                  className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
+                    isDownloaded(rawId)
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                      : getDownloadProgress(rawId)?.status === 'downloading'
+                      ? 'border-orange-500/40 bg-orange-500/10 text-orange-400 animate-pulse'
+                      : 'border-white/[.13] bg-white/[.04] text-white hover:bg-white/[.09]'
+                  }`}
+                >
+                  {isDownloaded(rawId) ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Downloaded (Offline)
+                    </>
+                  ) : getDownloadProgress(rawId)?.status === 'downloading' ? (
+                    <>
+                      <Download className="h-4 w-4 animate-bounce" /> {getDownloadProgress(rawId)?.progress}%
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" /> Download for Offline
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(window.location.href);
+                    Analytics.logEvent('share', { userId: currentUser?.id, entityId: rawId, entityTitle: media.title });
+                    toast.success('Link copied to clipboard');
+                  }}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/[.13] bg-white/[.04] px-3 text-xs font-semibold text-slate-300 hover:bg-white/[.09] transition"
+                >
+                  <Share2 className="h-4 w-4" /> Share
+                </button>
+
+                <div className="hidden sm:flex items-center gap-2 ml-auto text-[11px] text-slate-400 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-xl">
+                  <Check className="h-3.5 w-3.5 text-orange-400" />
+                  <span>4K UHD • Lossless Audio</span>
+                </div>
+              </div>
+
+              {/* Synopsis Box */}
+              <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-4 space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Synopsis</p>
+                <p className={`text-xs sm:text-sm leading-relaxed text-slate-300 ${expanded ? '' : 'line-clamp-3'}`}>
+                  {media.description}
+                </p>
+                {media.description.length > 180 && (
+                  <button
+                    onClick={() => setExpanded(!expanded)}
+                    className="text-xs font-semibold text-orange-400 hover:text-orange-300"
+                  >
+                    {expanded ? 'Show less' : 'Show more'}
+                  </button>
+                )}
+                {writers.length > 0 && (
+                  <p className="pt-2 text-xs text-slate-400 border-t border-white/[0.05]">
+                    Written by: {writers.map((w) => w.name).join(', ')}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-          <aside className="glass rounded-xl p-5">
-            <p className="section-eyebrow">Premium playback</p>
-            <div className="mt-3 grid gap-3 text-sm text-slate-300">
-              <span className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-orange-400" /> Up to 4K UHD
-              </span>
-              <span className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-orange-400" /> Continue across devices
-              </span>
-              <span className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-orange-400" /> No interruptions
-              </span>
-            </div>
-          </aside>
-        </section>
 
-        {/* TV Episodes */}
-        {isTv && media.seasons && (
-          <section className="border-b border-white/[.08] py-8">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="section-eyebrow mb-1">Continue the story</p>
-                <h2 className="section-title">Episodes</h2>
-              </div>
-              <label className="flex items-center gap-2 rounded-lg border border-white/[.1] bg-white/[.035] px-3 py-2 text-xs text-slate-300">
-                Season
-                <select
-                  value={season}
-                  onChange={(event) => setSeason(Number(event.target.value))}
-                  className="bg-transparent text-white outline-none"
-                >
-                  {media.seasons
-                    .filter((item) => item.seasonNumber > 0)
-                    .map((item) => (
-                      <option className="bg-[#121927]" key={item.id} value={item.seasonNumber}>
-                        {item.seasonNumber}
-                      </option>
-                    ))}
-                </select>
-                <ChevronDown className="h-3 w-3" />
-              </label>
-            </div>
-            <div className="scrollbar-hide flex gap-3 overflow-x-auto pb-2">
-              {seasonData.data?.episodes?.map((episode) => (
-                <article key={episode.id} className="w-52 shrink-0 overflow-hidden rounded-lg border border-white/[.08] bg-[#0e1522]">
-                  <img
-                    src={episode.stillUrl || media.backdropUrl || media.imageUrl}
-                    alt=""
-                    className="aspect-video w-full object-cover"
-                  />
-                  <div className="p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">
-                      Episode {episode.episodeNumber}
-                    </p>
-                    <h3 className="mt-1 truncate text-sm font-semibold text-white">{episode.name}</h3>
-                    <p className="mt-1 text-[11px] text-slate-500">{episode.runtime || '—'} min</p>
+          {/* Right Column (TV Episodes Playlist, Up Next Queue, Trending Rail) */}
+          <div className="lg:col-span-4 xl:col-span-4 2xl:col-span-4 space-y-4">
+            {/* TV Episodes Playlist Navigator */}
+            {isTv && media.seasons && (
+              <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3.5 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400">Episodes Navigator</p>
+                    <h2 className="text-sm font-bold text-white">Season Episodes</h2>
                   </div>
-                </article>
-              )) || <div className="text-sm text-slate-500">Episodes are loading…</div>}
+                  <label className="flex items-center gap-1.5 rounded-lg border border-white/[.1] bg-black/40 px-2.5 py-1 text-xs text-slate-300">
+                    <span>S</span>
+                    <select
+                      value={season}
+                      onChange={(event) => setSeason(Number(event.target.value))}
+                      className="bg-transparent text-white outline-none font-semibold cursor-pointer"
+                    >
+                      {media.seasons
+                        .filter((item) => item.seasonNumber > 0)
+                        .map((item) => (
+                          <option className="bg-[#121927] text-white" key={item.id} value={item.seasonNumber}>
+                            {item.seasonNumber}
+                          </option>
+                        ))}
+                    </select>
+                    <ChevronDown className="h-3 w-3 text-slate-400" />
+                  </label>
+                </div>
+
+                <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
+                  {seasonData.data?.episodes?.map((episode) => (
+                    <article
+                      key={episode.id}
+                      className="flex gap-2.5 p-2 rounded-xl border border-white/[0.05] bg-black/30 hover:border-orange-500/40 hover:bg-white/[0.03] transition group cursor-pointer"
+                    >
+                      <div className="relative w-24 h-14 shrink-0 rounded-lg overflow-hidden bg-slate-900">
+                        <img
+                          src={episode.stillUrl || media.backdropUrl || media.imageUrl}
+                          alt=""
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <span className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-white">
+                          {episode.runtime ? `${episode.runtime}m` : '—'}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold text-orange-400 uppercase">
+                          Episode {episode.episodeNumber}
+                        </p>
+                        <h3 className="truncate text-xs font-semibold text-white group-hover:text-orange-300 transition-colors">
+                          {episode.name}
+                        </h3>
+                        <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                          {episode.overview || 'Watch episode now on OrangeFlix'}
+                        </p>
+                      </div>
+                    </article>
+                  )) || <div className="text-xs text-slate-500 py-4 text-center">Loading episodes…</div>}
+                </div>
+              </div>
+            )}
+
+            {/* Up Next Recommendations Queue (Rich 8-Item Fill) */}
+            {upNextList.length > 0 && (
+              <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3.5 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-orange-400" />
+                    <h3 className="text-sm font-bold text-white">Up Next & Recommended</h3>
+                  </div>
+                  <Link
+                    to={isTv ? '/series' : '/movies'}
+                    className="text-[11px] font-semibold text-orange-400 hover:text-orange-300"
+                  >
+                    View more →
+                  </Link>
+                </div>
+
+                <div className="space-y-2">
+                  {upNextList.slice(0, 7).map((rec) => (
+                    <Link
+                      key={rec.id || rec.tmdbId}
+                      to={`/watch/${rec.mediaType || (isTv ? 'tv' : 'movie')}-${rec.tmdbId || rec.id}`}
+                      className="flex gap-2.5 p-2 rounded-xl border border-white/[0.05] bg-black/20 hover:border-orange-500/40 hover:bg-white/[0.04] transition group"
+                    >
+                      <div className="relative w-24 h-14 shrink-0 rounded-lg overflow-hidden bg-slate-900">
+                        <img
+                          src={rec.backdropUrl || rec.posterUrl || rec.imageUrl || POSTER_FALLBACK}
+                          alt={rec.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <span className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-orange-400 flex items-center gap-0.5">
+                          <Star className="h-2 w-2 fill-current" />
+                          {rec.voteAverage?.toFixed(1) || '4.5'}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-xs font-semibold text-white group-hover:text-orange-400 transition-colors">
+                          {rec.title}
+                        </h4>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
+                          <span>{rec.releaseYear || 'Cinema'}</span>
+                          <span>•</span>
+                          <span className="truncate max-w-[100px]">{rec.genres?.[0] || 'Popular'}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Trending Rail Queue */}
+            {trending.data?.items && trending.data.items.length > 0 && (
+              <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3.5 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Flame className="h-4 w-4 text-orange-400" />
+                    <h3 className="text-sm font-bold text-white">Trending This Week</h3>
+                  </div>
+                  <Link
+                    to="/trending"
+                    className="text-[11px] font-semibold text-orange-400 hover:text-orange-300"
+                  >
+                    All →
+                  </Link>
+                </div>
+
+                <div className="space-y-2">
+                  {trending.data.items.slice(0, 4).map((trendItem) => (
+                    <Link
+                      key={trendItem.id}
+                      to={`/watch/${trendItem.mediaType || 'movie'}-${trendItem.tmdbId || trendItem.id}`}
+                      className="flex gap-2.5 p-2 rounded-xl border border-white/[0.05] bg-black/20 hover:border-orange-500/40 hover:bg-white/[0.04] transition group"
+                    >
+                      <div className="relative w-20 h-12 shrink-0 rounded-lg overflow-hidden bg-slate-900">
+                        <img
+                          src={trendItem.backdropUrl || trendItem.posterUrl || POSTER_FALLBACK}
+                          alt={trendItem.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-xs font-semibold text-white group-hover:text-orange-400 transition-colors">
+                          {trendItem.title}
+                        </h4>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
+                          <span className="text-orange-400 font-bold">★ {trendItem.voteAverage?.toFixed(1) || '4.8'}</span>
+                          <span>•</span>
+                          <span>{trendItem.releaseYear || '2026'}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. Bottom Section: Full-Width Cinematic Discoveries & Content Graph Area */}
+        <div className="space-y-10 pt-10 border-t border-white/[0.08] mt-8">
+          {/* Cast & Talent Rail (Spans full width so all actor cards have space) */}
+          <CastRail cast={media.cast} />
+
+          {/* In-Page Content Graph Discoveries (Full Width) */}
+          <RelatedMusic soundtrack={relations.soundtrack} tmdbId={media.tmdbId || undefined} isLoading={isLoadingRelations} />
+          <RelatedBooks sourceBook={relations.sourceBook} isLoading={isLoadingRelations} />
+          <RelatedNews news={relations.news} isLoading={isLoadingRelations} />
+
+          {/* Recommendation Rails */}
+          <ContentRail
+            title="Because you watched this"
+            eyebrow="Selected for you"
+            items={media.recommendations}
+            href={isTv ? '/series' : '/movies'}
+          />
+          <ContentRail
+            title="More like this"
+            eyebrow="Similar stories"
+            items={media.similar}
+            href={isTv ? '/series' : '/movies'}
+          />
+          <ContentRail
+            title="Trending now"
+            eyebrow="What everyone is watching"
+            items={trending.data?.items.slice(0, 12) || []}
+            href="/trending"
+            loading={trending.isLoading}
+          />
+
+          {/* Community Reviews & Discussions (Full Width) */}
+          <section className="rounded-2xl border border-white/[.08] bg-white/[.02] p-5 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400">Audience Reactions</p>
+                <h2 className="text-lg sm:text-xl font-bold text-white">
+                  Reviews & Ratings ({reviews.length})
+                </h2>
+              </div>
+              <div className="flex items-center gap-2 bg-white/[0.04] border border-white/10 px-3.5 py-1.5 rounded-xl">
+                <Star className="h-4 w-4 fill-orange-400 text-orange-400" />
+                <span className="text-base font-bold text-white">{media.voteAverage.toFixed(1)}</span>
+                <span className="text-xs text-slate-400">/ 10</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Review Composer */}
+              <div className="lg:col-span-5">
+                {currentUser ? (
+                  <form onSubmit={submitReview} className="space-y-3 p-4 rounded-xl border border-white/[.07] bg-black/30">
+                    <p className="text-xs font-semibold text-slate-300">Share your thoughts</p>
+                    <textarea
+                      value={review}
+                      onChange={(event) => setReview(event.target.value)}
+                      className="w-full min-h-[90px] rounded-xl border border-white/[.1] bg-black/50 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-orange-400 transition resize-none"
+                      placeholder="Write your review for this title…"
+                    />
+                    <button className="premium-button w-full rounded-xl py-2 text-xs font-semibold shadow-md shadow-orange-500/20">
+                      Post Review
+                    </button>
+                  </form>
+                ) : (
+                  <div className="p-4 rounded-xl border border-white/[.07] bg-black/30 text-center">
+                    <p className="text-xs text-slate-400">
+                      <Link to="/login" className="font-semibold text-orange-400 hover:underline">
+                        Sign in
+                      </Link>{' '}
+                      to write a review and rate this title.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Reviews List */}
+              <div className="lg:col-span-7 space-y-3">
+                {reviews.slice(0, 6).map((entry) => (
+                  <article key={entry.id} className="rounded-xl border border-white/[.06] bg-black/20 p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-xs font-semibold text-white">{entry.userName}</span>
+                      <span className="text-xs text-orange-400">{'★'.repeat(entry.rating)}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-300 leading-relaxed">{entry.comment}</p>
+                  </article>
+                ))}
+                {!reviews.length && (
+                  <p className="py-6 text-center text-xs text-slate-500">
+                    No reviews yet. Be the first to share your rating!
+                  </p>
+                )}
+              </div>
             </div>
           </section>
-        )}
-
-        {/* Cast & Talent */}
-        <CastRail cast={media.cast} />
-
-        {/* In-Page Content Graph Discoveries */}
-        <RelatedMusic soundtrack={relations.soundtrack} tmdbId={media.tmdbId || undefined} isLoading={isLoadingRelations} />
-        <RelatedBooks sourceBook={relations.sourceBook} isLoading={isLoadingRelations} />
-        <RelatedNews news={relations.news} isLoading={isLoadingRelations} />
-
-        {/* Recommendation Rails */}
-        <ContentRail
-          title="Because you watched this"
-          eyebrow="Selected for you"
-          items={media.recommendations}
-          href={isTv ? '/series' : '/movies'}
-        />
-        <ContentRail
-          title="More like this"
-          eyebrow="Similar stories"
-          items={media.similar}
-          href={isTv ? '/series' : '/movies'}
-        />
-        <ContentRail
-          title="Trending now"
-          eyebrow="What everyone is watching"
-          items={trending.data?.items.slice(0, 12) || []}
-          href="/trending"
-          loading={trending.isLoading}
-        />
-
-        {/* Community Reviews */}
-        <section className="border-t border-white/[.08] py-8">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="section-eyebrow mb-1">Audience reactions</p>
-              <h2 className="section-title">
-                Reviews <span className="text-slate-500">({reviews.length})</span>
-              </h2>
-            </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-white">{media.voteAverage.toFixed(1)}</p>
-              <div className="flex text-orange-400">
-                <Star className="h-3 w-3 fill-current" />
-                <Star className="h-3 w-3 fill-current" />
-                <Star className="h-3 w-3 fill-current" />
-                <Star className="h-3 w-3 fill-current" />
-                <Star className="h-3 w-3 fill-current" />
-              </div>
-            </div>
-          </div>
-          {currentUser ? (
-            <form onSubmit={submitReview} className="mt-5 flex gap-2">
-              <input
-                value={review}
-                onChange={(event) => setReview(event.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-white/[.1] bg-white/[.035] px-3 text-sm text-white outline-none focus:border-orange-400"
-                placeholder="Write a review…"
-              />
-              <button className="premium-button rounded-lg px-4 text-sm font-semibold">Post</button>
-            </form>
-          ) : (
-            <p className="mt-5 text-sm text-slate-400">
-              <Link to="/login" className="font-semibold text-orange-400">
-                Sign in
-              </Link>{' '}
-              to share your thoughts.
-            </p>
-          )}
-          <div className="mt-5 grid gap-3">
-            {reviews.slice(0, 3).map((entry) => (
-              <article key={entry.id} className="rounded-xl border border-white/[.07] bg-white/[.025] p-4">
-                <div className="flex justify-between gap-4">
-                  <span className="text-sm font-semibold text-white">{entry.userName}</span>
-                  <span className="text-xs text-orange-400">{'★'.repeat(entry.rating)}</span>
-                </div>
-                <p className="mt-2 text-sm text-slate-300">{entry.comment}</p>
-              </article>
-            ))}
-            {!reviews.length && (
-              <p className="py-5 text-center text-sm text-slate-500">
-                No reviews yet. Be the first to share your thoughts.
-              </p>
-            )}
-          </div>
-        </section>
-      </main>
+        </div>
+      </div>
 
       {/* Post-Watch Recommendation Overlay Modal */}
       {showPostWatch && (

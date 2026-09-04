@@ -178,19 +178,20 @@ export const GeoContentService = {
     if ((!isCacheFresh || !hasCachedCountryItems || filter.forceRefresh) && firestore) {
       try {
         const contentRef = collection(firestore, 'geoContent');
-        const q = query(
-          contentRef,
-          where('country', '==', countryCode),
-          firestoreLimit(150)
-        );
+        const [snap1, snap2] = await Promise.all([
+          getDocs(query(contentRef, where('country', '==', countryCode), firestoreLimit(150))),
+          getDocs(query(contentRef, where('countryCode', '==', countryCode), firestoreLimit(150))),
+        ]);
 
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          snap.docs.forEach((d) => {
+        const allDocs = [...snap1.docs, ...snap2.docs];
+        if (allDocs.length > 0) {
+          allDocs.forEach((d) => {
             const data = d.data() as GeoContentItem;
-            if (data && data.id) {
-              memoryCache.set(data.id, data);
-              if (data.slug) memoryCache.set(data.slug, data);
+            if (data && (data.id || data.videoId || data.youtubeVideoId)) {
+              const canonicalId = data.id || data.videoId || data.youtubeVideoId;
+              const formattedItem = { ...data, id: canonicalId };
+              memoryCache.set(canonicalId, formattedItem);
+              if (data.slug) memoryCache.set(data.slug, formattedItem);
             }
           });
           persistLocalCache();
@@ -345,24 +346,32 @@ export const GeoContentService = {
   async getSeriesEpisodes(currentItem: GeoContentItem): Promise<GeoContentItem[]> {
     const country = currentItem.country || currentItem.countryCode || 'RW';
     const channelId = currentItem.channelId || currentItem.youtubeChannelId;
+    const seriesId = (currentItem as { seriesId?: string }).seriesId;
 
     const res = await this.getMoviesByCountry({
       countryCode: country,
       status: 'published',
-      limit: 80,
+      limit: 100,
     });
 
     const all = res.items;
     let episodes: GeoContentItem[] = [];
 
-    // Match by channel ID
-    if (channelId) {
+    // 1. Direct seriesId match if available (highest confidence V2 link)
+    if (seriesId) {
+      episodes = all.filter(
+        (item) => (item as { seriesId?: string }).seriesId === seriesId
+      );
+    }
+
+    // 2. Match by channel ID if seriesId didn't return enough or wasn't set
+    if (episodes.length === 0 && channelId) {
       episodes = all.filter(
         (item) => (item.channelId === channelId || item.youtubeChannelId === channelId)
       );
     }
 
-    // Match by series title root
+    // 3. Match by series title root
     const titleRoot = (currentItem.title || '')
       .replace(/ep(isode)?\s*\d+/i, '')
       .replace(/part\s*\d+/i, '')
@@ -379,8 +388,18 @@ export const GeoContentService = {
       episodes = Array.from(new Map([...episodes, ...titleMatches].map((i) => [i.id, i])).values());
     }
 
+    // Ensure the current item itself is included
+    if (!episodes.some((e) => e.id === currentItem.id || e.youtubeVideoId === currentItem.youtubeVideoId)) {
+      episodes.push(currentItem);
+    }
+
     // Sort episodes naturally (Episode 1, 2, 3... or chronological)
     episodes.sort((a, b) => {
+      const epNumA = (a as { episodeNumber?: number }).episodeNumber;
+      const epNumB = (b as { episodeNumber?: number }).episodeNumber;
+      if (typeof epNumA === 'number' && typeof epNumB === 'number') {
+        return epNumA - epNumB;
+      }
       const numA = (a.title.match(/(?:ep(?:isode)?|part)\s*(\d+)/i) || [])[1];
       const numB = (b.title.match(/(?:ep(?:isode)?|part)\s*(\d+)/i) || [])[1];
       if (numA && numB) return parseInt(numA, 10) - parseInt(numB, 10);
@@ -512,12 +531,15 @@ export const GeoContentService = {
     if (firestore) {
       try {
         const chanRef = collection(firestore, 'trustedChannels');
-        const q = code
-          ? query(chanRef, where('country', '==', code), firestoreLimit(50))
-          : query(chanRef, firestoreLimit(100));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          snap.docs.forEach((d) => {
+        const [snap1, snap2] = code
+          ? await Promise.all([
+              getDocs(query(chanRef, where('country', '==', code), firestoreLimit(50))),
+              getDocs(query(chanRef, where('countryCode', '==', code), firestoreLimit(50))),
+            ])
+          : [await getDocs(query(chanRef, firestoreLimit(100))), { docs: [] }];
+        const allDocs = [...snap1.docs, ...snap2.docs];
+        if (allDocs.length > 0) {
+          allDocs.forEach((d) => {
             const data = d.data() as TrustedChannel;
             if (data && data.channelId) {
               const idx = trustedChannelsMemory.findIndex((c) => c.channelId === data.channelId);
@@ -1115,7 +1137,7 @@ export const GeoContentService = {
     persistLocalCache();
 
     if (firestore) {
-      void updateDoc(doc(firestore, 'customQueries', id), { enabled }).catch(() => {});
+      void setDoc(doc(firestore, 'customQueries', id), { enabled }, { merge: true }).catch(() => {});
     }
   },
 
@@ -1178,10 +1200,10 @@ export const GeoContentService = {
           ...(classification ? { classification, type: classification, contentType: classification } : {}),
           updatedAt: new Date().toISOString(),
         });
-        await updateDoc(docRef, updatePayload);
+        await setDoc(docRef, updatePayload, { merge: true });
       }
-    } catch {
-      // Memory update completed
+    } catch (err) {
+      console.warn(`[GeoContentService] Firestore updateContentStatus error for ${id}:`, err);
     }
   },
 
