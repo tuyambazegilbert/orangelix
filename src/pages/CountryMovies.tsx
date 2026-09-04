@@ -6,7 +6,7 @@
  * country location switching, and territory showcase.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { GeoContentItem, GeoContentType } from '@/types/geo-content';
 import { GeoContentService } from '@/services/geo-content-service';
@@ -18,6 +18,7 @@ import {
   getAllCountries,
 } from '@/features/geo/countryConfig';
 import { getGeoTranslations } from '@/features/geo/translations';
+import { getCanonicalMediaId, partitionRails } from '@/lib/deduplication';
 import CountryMovieCard from '@/components/geo/CountryMovieCard';
 import CountryStageSlider from '@/components/geo/CountryStageSlider';
 import GeoContentRail from '@/components/geo/GeoContentRail';
@@ -53,6 +54,11 @@ import {
   Grid,
   ListFilter,
   Globe,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ArrowRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -128,7 +134,21 @@ export default function CountryMovies() {
     };
   }, [countryCode]);
 
-  // Fetch catalog on filter changes
+  // Pro Page-by-Page Pagination (50 items per page by default, scalable for 5,000+ videos)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
+  const [jumpPageInput, setJumpPageInput] = useState<string>('');
+  const gridTopRef = useRef<HTMLDivElement | null>(null);
+
+  const isFiltered = Boolean(searchQuery.trim() || selectedCategory !== 'all' || durationRange !== 'all');
+
+  // Reset page to 1 whenever catalog filters or tabs change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [countryCode, activeTab, searchQuery, selectedCategory, durationRange, pageSize]);
+
+  // Fetch catalog on filter / page / pageSize changes
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -152,6 +172,9 @@ export default function CountryMovies() {
       }
 
       const effectiveSearch = searchQuery.trim() || (selectedCategory !== 'all' ? selectedCategory : undefined);
+      const isGridMode = isFiltered || activeTab !== 'rails';
+      const fetchPage = isGridMode ? currentPage : 1;
+      const fetchLimit = isGridMode ? pageSize : 150;
 
       const res = await GeoContentService.getMoviesByCountry({
         countryCode,
@@ -161,11 +184,13 @@ export default function CountryMovies() {
         durationRange,
         sortBy,
         status: 'published',
-        limit: 100,
+        page: fetchPage,
+        limit: fetchLimit,
       });
 
       if (isMounted) {
         setMovies(res.items);
+        setTotalFilteredCount(res.total);
         if (featuredMovies.length === 0 && res.items.length > 0) {
           setFeaturedMovies(res.items.slice(0, 6));
         }
@@ -177,40 +202,115 @@ export default function CountryMovies() {
     return () => {
       isMounted = false;
     };
-  }, [countryCode, activeTab, searchQuery, selectedCategory, durationRange]);
+  }, [countryCode, activeTab, searchQuery, selectedCategory, durationRange, currentPage, pageSize, isFiltered]);
 
-  // Categorized movie splits for rails
-  const newReleases = useMemo(() => {
-    return [...movies]
+  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / pageSize));
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages || newPage === currentPage) return;
+    setCurrentPage(newPage);
+    gridTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleJumpSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const p = parseInt(jumpPageInput, 10);
+    if (!isNaN(p) && p >= 1 && p <= totalPages) {
+      handlePageChange(p);
+      setJumpPageInput('');
+    }
+  };
+
+  // Smart page numbers range with ellipsis for large catalogs (e.g. [1, 2, 3, '...', 50, 51, 52, '...', 100])
+  const getPaginationRange = () => {
+    const delta = 2;
+    const range: (number | string)[] = [];
+    const rangeWithDots: (number | string)[] = [];
+    let l: number | undefined;
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    for (const i of range) {
+      if (typeof i === 'number') {
+        if (l) {
+          if (i - l === 2) {
+            rangeWithDots.push(l + 1);
+          } else if (i - l !== 1) {
+            rangeWithDots.push('...');
+          }
+        }
+        rangeWithDots.push(i);
+        l = i;
+      }
+    }
+
+    return rangeWithDots;
+  };
+
+  // Categorized movie splits for rails (Guaranteed 100% Unique & Deduplicated across rails)
+  const partitionedRails = useMemo(() => {
+    const heroExcluded = new Set(featuredMovies.map(getCanonicalMediaId).filter(Boolean));
+
+    const recCandidates = recommendedMovies.length > 0 ? recommendedMovies : movies;
+    const releaseCandidates = [...movies]
       .filter((m) => m.isFullMovieCandidate || m.classification === 'movie')
-      .sort((a, b) => new Date(b.publishedAt || b.createdAt || '').getTime() - new Date(a.publishedAt || a.createdAt || '').getTime())
-      .slice(0, 12);
-  }, [movies]);
+      .sort((a, b) => new Date(b.publishedAt || b.createdAt || '').getTime() - new Date(a.publishedAt || a.createdAt || '').getTime());
+    const trendingCandidates = [...movies]
+      .sort((a, b) => (b.views || b.viewCount || 0) - (a.views || a.viewCount || 0));
+    const popularCandidates = [...movies]
+      .filter((m) => (m.score || m.classificationScore || 0) >= 50 || (m.views || 0) > 2000)
+      .sort((a, b) => (b.score || 0) * (b.views || 1) - (a.score || 0) * (a.views || 1));
+    const seriesCandidates = [...movies]
+      .filter((m) => m.classification === 'series' || m.classification === 'episode' || !m.isFullMovieCandidate);
+    const theatreCandidates = [...movies]
+      .filter((m) => m.isFullMovieCandidate && (m.durationSeconds || 0) >= 3600);
 
-  const trendingMovies = useMemo(() => {
-    return [...movies]
-      .sort((a, b) => (b.views || b.viewCount || 0) - (a.views || a.viewCount || 0))
-      .slice(0, 12);
-  }, [movies]);
-
-  const popularTopRated = useMemo(() => {
-    return [...movies]
-      .filter((m) => (m.score || m.classificationScore || 0) >= 50 || (m.views || 0) > 5000)
-      .sort((a, b) => (b.score || 0) * (b.views || 1) - (a.score || 0) * (a.views || 1))
-      .slice(0, 12);
-  }, [movies]);
-
-  const bingeWorthySeries = useMemo(() => {
-    return [...movies]
-      .filter((m) => m.classification === 'series' || m.classification === 'episode' || !m.isFullMovieCandidate)
-      .slice(0, 12);
-  }, [movies]);
-
-  const newInTheatres = useMemo(() => {
-    return [...movies]
-      .filter((m) => m.isFullMovieCandidate && (m.durationSeconds || 0) >= 3600)
-      .slice(0, 12);
-  }, [movies]);
+    return partitionRails<GeoContentItem>(
+      [
+        {
+          key: 'recommended',
+          items: recCandidates,
+          maxCount: 10,
+          fallbackItems: movies,
+        },
+        {
+          key: 'newReleases',
+          items: releaseCandidates,
+          maxCount: 10,
+          fallbackItems: movies,
+        },
+        {
+          key: 'trending',
+          items: trendingCandidates,
+          maxCount: 10,
+          fallbackItems: movies,
+        },
+        {
+          key: 'popular',
+          items: popularCandidates,
+          maxCount: 10,
+          fallbackItems: movies,
+        },
+        {
+          key: 'series',
+          items: seriesCandidates,
+          maxCount: 10,
+          fallbackItems: movies,
+        },
+        {
+          key: 'theatres',
+          items: theatreCandidates,
+          maxCount: 10,
+          fallbackItems: movies,
+        },
+      ],
+      heroExcluded
+    );
+  }, [featuredMovies, recommendedMovies, movies]);
 
   const handleRunDiscovery = async () => {
     setIsDiscovering(true);
@@ -318,8 +418,6 @@ export default function CountryMovies() {
     );
   };
 
-  const isFiltered = Boolean(searchQuery.trim() || selectedCategory !== 'all' || durationRange !== 'all');
-
   return (
     <div className="min-h-screen bg-[#080b12] text-white overflow-x-hidden">
       <SEOHead
@@ -342,153 +440,138 @@ export default function CountryMovies() {
         />
       )}
 
-      <main className="page-wrap py-6 max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
-        <Breadcrumbs
-          items={[
-            { name: `${country.name} Cinema`, url: `/${countryCode.toLowerCase()}/movies` },
-          ]}
-        />
-
-        {/* Territory Showcase & Country Quick Switcher */}
-        <GeoCountryShowcase
-          currentCountryCode={countryCode}
-          countries={allCountries}
-          onSelectCountry={handleCountryChange}
-        />
-
-        {/* Section Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2 border-t border-gray-800/80">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl" role="img" aria-label={country.name}>{country.flagEmoji}</span>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                {country.name} Cinema Catalog
-              </h1>
+      <main className="page-wrap py-3 sm:py-4 max-w-7xl mx-auto px-3 sm:px-6 space-y-4">
+        {/* Ultra-Compact Pro Cinema Command Deck */}
+        <section className="rounded-xl border border-white/[.08] bg-gradient-to-r from-[#0d1322]/95 via-[#111827]/90 to-[#0d1322]/95 p-2 sm:p-2.5 backdrop-blur-md shadow-[0_8px_24px_rgba(0,0,0,0.25)] space-y-2">
+          {/* Row 1: Territory Chips (Left) + View Mode Tabs (Right) */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
+              <GeoCountryShowcase
+                showTitle={false}
+                currentCountryCode={countryCode}
+                countries={allCountries}
+                onSelectCountry={handleCountryChange}
+              />
+              <span className="text-[10px] font-mono text-slate-400 bg-white/[.04] px-1.5 py-0.5 rounded border border-white/[.06] shrink-0">
+                {totalCountryItems} titles
+              </span>
             </div>
-            
-          </div>
 
-          {/* Quick Category / Navigation Tabs */}
-          <div className="flex items-center gap-2">
             <Tabs
               value={activeTab}
               onValueChange={(v) => setActiveTab(v as CatalogTab)}
-              className="w-full sm:w-auto"
+              className="shrink-0 self-end lg:self-auto"
             >
-              <TabsList className="bg-gray-900/80 border border-gray-800 p-1 rounded-xl h-auto flex flex-wrap">
+              <TabsList className="bg-slate-950/80 border border-white/10 p-0.5 rounded-lg h-7 flex flex-wrap">
                 <TabsTrigger
                   value="rails"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-[11px] px-2 py-0.5 rounded-md flex items-center gap-1 font-medium transition-all"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3 h-3" />
                   Featured Rails
                 </TabsTrigger>
                 <TabsTrigger
                   value="full_movies"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-[11px] px-2 py-0.5 rounded-md flex items-center gap-1 font-medium transition-all"
                 >
-                  <Film className="w-3.5 h-3.5" />
+                  <Film className="w-3 h-3" />
                   Full Movies
                 </TabsTrigger>
                 <TabsTrigger
                   value="series"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-[11px] px-2 py-0.5 rounded-md flex items-center gap-1 font-medium transition-all"
                 >
-                  <Tv className="w-3.5 h-3.5" />
+                  <Tv className="w-3 h-3" />
                   Series
                 </TabsTrigger>
                 <TabsTrigger
                   value="all"
-                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+                  className="data-[state=active]:bg-orange-500 data-[state=active]:text-white text-[11px] px-2 py-0.5 rounded-md flex items-center gap-1 font-medium transition-all"
                 >
-                  <Grid className="w-3.5 h-3.5" />
+                  <Grid className="w-3 h-3" />
                   All Grid
                 </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
-        </div>
 
-        {/* Filters and Controls */}
-        <section className="space-y-4">
-          <div className="p-4 rounded-2xl bg-gray-900/60 border border-gray-800/80 flex flex-col md:flex-row md:items-center gap-4">
+          {/* Row 2: Inlined Search + Filters + Categories Ribbon */}
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pt-1.5 border-t border-white/[.06]">
             {/* Search Input */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <div className="relative shrink-0 w-44 sm:w-56">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-slate-400 w-3 h-3" />
               <Input
                 type="search"
                 placeholder={t.searchPlaceholder(country.name)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-gray-950 border-gray-800 text-white placeholder-gray-500 rounded-xl text-xs h-10 focus:border-orange-500"
+                className="pl-7 bg-slate-950/80 border-white/10 text-white placeholder-slate-500 rounded-lg text-xs h-7 focus:border-orange-500"
               />
             </div>
 
             {/* Duration Filter Dropdown */}
-            <div className="flex items-center space-x-2">
-              <Select value={durationRange} onValueChange={(v) => setDurationRange(v as DurationRange)}>
-                <SelectTrigger className="w-full md:w-44 bg-gray-950 border-gray-800 text-white rounded-xl text-xs h-10">
-                  <Clock className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
-                  <SelectValue placeholder={t.allDurations} />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                  <SelectItem value="all">{t.allDurations}</SelectItem>
-                  <SelectItem value="under_20">{t.shortLength}</SelectItem>
-                  <SelectItem value="20_45">{t.mediumLength}</SelectItem>
-                  <SelectItem value="45_90">Standard (45-90m)</SelectItem>
-                  <SelectItem value="90_plus">{t.featureLength}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={durationRange} onValueChange={(v) => setDurationRange(v as DurationRange)}>
+              <SelectTrigger className="w-32 shrink-0 bg-slate-950/80 border-white/10 text-white rounded-lg text-xs h-7">
+                <Clock className="w-3 h-3 mr-1 text-orange-400" />
+                <SelectValue placeholder={t.allDurations} />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                <SelectItem value="all">{t.allDurations}</SelectItem>
+                <SelectItem value="under_20">{t.shortLength}</SelectItem>
+                <SelectItem value="20_45">{t.mediumLength}</SelectItem>
+                <SelectItem value="45_90">Standard (45-90m)</SelectItem>
+                <SelectItem value="90_plus">{t.featureLength}</SelectItem>
+              </SelectContent>
+            </Select>
 
             {/* Language Switcher */}
-            <div className="flex items-center space-x-2">
-              <Select value={language} onValueChange={handleLanguageChange}>
-                <SelectTrigger className="w-full md:w-36 bg-gray-950 border-gray-800 text-white rounded-xl text-xs h-10">
-                  <Globe className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                  <SelectItem value="rw">🇷🇼 Kinyarwanda</SelectItem>
-                  <SelectItem value="en">🇬🇧 English</SelectItem>
-                  <SelectItem value="fr">🇫🇷 Français</SelectItem>
-                  <SelectItem value="sw">🇹🇿 Kiswahili</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+            <Select value={language} onValueChange={handleLanguageChange}>
+              <SelectTrigger className="w-28 shrink-0 bg-slate-950/80 border-white/10 text-white rounded-lg text-xs h-7">
+                <Globe className="w-3 h-3 mr-1 text-orange-400" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                <SelectItem value="rw">🇷🇼 Kinyarwanda</SelectItem>
+                <SelectItem value="en">🇬🇧 English</SelectItem>
+                <SelectItem value="fr">🇫🇷 Français</SelectItem>
+                <SelectItem value="sw">🇹🇿 Kiswahili</SelectItem>
+              </SelectContent>
+            </Select>
 
-          {/* Quick Categories Bar */}
-          {country.popularCategories && country.popularCategories.length > 0 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-xs font-semibold text-gray-400 mr-1 flex items-center gap-1">
-                <Tag className="w-3 h-3 text-orange-400" /> Categories:
-              </span>
-              <button
-                onClick={() => setSelectedCategory('all')}
-                className={`text-xs px-3 py-1 rounded-full border transition-all ${
-                  selectedCategory === 'all'
-                    ? 'bg-orange-500 text-white border-orange-500 font-semibold shadow-sm'
-                    : 'bg-gray-950 text-gray-400 border-gray-800 hover:border-orange-500/40 hover:text-white'
-                }`}
-              >
-                All
-              </button>
-              {country.popularCategories.map((cat) => (
+            {/* Subtle Divider */}
+            {country.popularCategories && country.popularCategories.length > 0 && (
+              <div className="h-4 w-px bg-white/10 shrink-0" />
+            )}
+
+            {/* Quick Categories Ribbon inlined in the same row */}
+            {country.popularCategories && country.popularCategories.length > 0 && (
+              <div className="flex items-center gap-1 shrink-0">
                 <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat.toLowerCase())}
-                  className={`text-xs px-3 py-1 rounded-full border transition-all ${
-                    selectedCategory.toLowerCase() === cat.toLowerCase()
-                      ? 'bg-orange-500 text-white border-orange-500 font-semibold shadow-sm'
-                      : 'bg-gray-950 text-gray-400 border-gray-800 hover:border-orange-500/40 hover:text-white'
+                  onClick={() => setSelectedCategory('all')}
+                  className={`text-[11px] px-2 py-0.5 rounded-md border shrink-0 transition-all ${
+                    selectedCategory === 'all'
+                      ? 'bg-orange-500 text-white border-orange-400 font-bold shadow-sm'
+                      : 'bg-white/[.04] text-slate-300 border-white/10 hover:border-orange-500/40 hover:text-white'
                   }`}
                 >
-                  {cat}
+                  All
                 </button>
-              ))}
-            </div>
-          )}
+                {country.popularCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat.toLowerCase())}
+                    className={`text-[11px] px-2 py-0.5 rounded-md border shrink-0 transition-all ${
+                      selectedCategory.toLowerCase() === cat.toLowerCase()
+                        ? 'bg-orange-500 text-white border-orange-400 font-bold shadow-sm'
+                        : 'bg-white/[.04] text-slate-300 border-white/10 hover:border-orange-500/40 hover:text-white'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
 
         {/* MODE 1: FEATURED CATEGORIZED RAILS (When not actively filtering with keyword) */}
@@ -507,7 +590,7 @@ export default function CountryMovies() {
                 title="Recommended for you"
                 eyebrow="Personalized Cinema Picks"
                 icon={<Star className="w-3 h-3 text-amber-400 fill-current" />}
-                items={recommendedMovies.length > 0 ? recommendedMovies : movies.slice(0, 8)}
+                items={partitionedRails.recommended || []}
                 countryCode={countryCode}
                 onSeeAll={() => setActiveTab('all')}
               />
@@ -517,7 +600,7 @@ export default function CountryMovies() {
                 title="New Releases"
                 eyebrow="Freshly Uploaded & Discovered"
                 icon={<Clock className="w-3 h-3 text-cyan-400" />}
-                items={newReleases.length > 0 ? newReleases : movies.slice(0, 8)}
+                items={partitionedRails.newReleases || []}
                 countryCode={countryCode}
                 onSeeAll={() => setActiveTab('latest')}
               />
@@ -527,7 +610,7 @@ export default function CountryMovies() {
                 title="Trending"
                 eyebrow="Most Watched This Week"
                 icon={<Flame className="w-3 h-3 text-rose-500" />}
-                items={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 8)}
+                items={partitionedRails.trending || []}
                 countryCode={countryCode}
                 onSeeAll={() => setActiveTab('popular')}
               />
@@ -537,7 +620,7 @@ export default function CountryMovies() {
                 title="Popular"
                 eyebrow="Critically Acclaimed Regional Hits"
                 icon={<TrendingUp className="w-3 h-3 text-emerald-400" />}
-                items={popularTopRated.length > 0 ? popularTopRated : movies.slice(0, 8)}
+                items={partitionedRails.popular || []}
                 countryCode={countryCode}
                 onSeeAll={() => setActiveTab('popular')}
               />
@@ -547,7 +630,7 @@ export default function CountryMovies() {
                 title="Binge-worthy series"
                 eyebrow="Continuous Multi-Part Storytelling"
                 icon={<Tv className="w-3 h-3 text-violet-400" />}
-                items={bingeWorthySeries.length > 0 ? bingeWorthySeries : movies.slice(0, 8)}
+                items={partitionedRails.series || []}
                 countryCode={countryCode}
                 onSeeAll={() => setActiveTab('series')}
               />
@@ -557,7 +640,7 @@ export default function CountryMovies() {
                 title="New in theatres"
                 eyebrow="Feature-Length Regional Cinema"
                 icon={<Theater className="w-3 h-3 text-orange-400" />}
-                items={newInTheatres.length > 0 ? newInTheatres : movies.slice(0, 8)}
+                items={partitionedRails.theatres || []}
                 countryCode={countryCode}
                 onSeeAll={() => setActiveTab('full_movies')}
               />
@@ -614,11 +697,111 @@ export default function CountryMovies() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                {movies.map((movie) => (
-                  <CountryMovieCard key={movie.id} movie={movie} countryCode={countryCode} />
-                ))}
-              </div>
+              <>
+                <div ref={gridTopRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
+                  {movies.map((movie) => (
+                    <CountryMovieCard key={movie.id} movie={movie} countryCode={countryCode} />
+                  ))}
+                </div>
+
+                {/* Pro Scalable Pagination Bar (50 items/page, Next/Previous, Ellipsis, Page Size) */}
+                <div className="mt-8 pt-4 pb-2 border-t border-white/[.08] flex flex-col md:flex-row items-center justify-between gap-4">
+                  {/* Results Count & Page Size Selector */}
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span>
+                      Showing <strong className="text-white font-mono">{((currentPage - 1) * pageSize) + 1}</strong>–<strong className="text-white font-mono">{Math.min(currentPage * pageSize, totalFilteredCount)}</strong> of <strong className="text-orange-400 font-mono">{totalFilteredCount.toLocaleString()}</strong> titles
+                    </span>
+                    <div className="h-3.5 w-px bg-white/10 hidden sm:block" />
+                    <div className="flex items-center gap-1.5">
+                      <span className="hidden sm:inline text-[11px]">Per page:</span>
+                      <Select value={String(pageSize)} onValueChange={(val) => setPageSize(Number(val))}>
+                        <SelectTrigger className="w-[85px] bg-slate-950/80 border-white/10 text-xs text-white rounded-lg h-7">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                          <SelectItem value="24">24 / page</SelectItem>
+                          <SelectItem value="50">50 / page</SelectItem>
+                          <SelectItem value="100">100 / page</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Numbered Page Navigation */}
+                  <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage <= 1 || isLoading}
+                      className="bg-slate-950/80 border-white/10 text-slate-300 hover:text-white hover:bg-white/[.08] rounded-lg text-xs h-7 px-2.5 disabled:opacity-30"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5 mr-1" /> Prev
+                    </Button>
+
+                    {getPaginationRange().map((pageItem, idx) => {
+                      if (pageItem === '...') {
+                        return (
+                          <span key={`dots-${idx}`} className="px-1.5 text-xs text-slate-500 font-mono select-none">
+                            ...
+                          </span>
+                        );
+                      }
+                      const pageNum = Number(pageItem);
+                      const isActive = pageNum === currentPage;
+                      return (
+                        <button
+                          key={`page-${pageNum}`}
+                          onClick={() => handlePageChange(pageNum)}
+                          disabled={isLoading}
+                          className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-mono font-medium transition-all ${
+                            isActive
+                              ? 'bg-orange-500 border border-orange-400 text-white font-bold shadow-sm shadow-orange-500/30'
+                              : 'bg-slate-950/80 border border-white/10 text-slate-300 hover:text-white hover:border-orange-500/40 hover:bg-white/[.08]'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage >= totalPages || isLoading}
+                      className="bg-slate-950/80 border-white/10 text-slate-300 hover:text-white hover:bg-white/[.08] rounded-lg text-xs h-7 px-2.5 disabled:opacity-30"
+                    >
+                      Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                  </div>
+
+                  {/* Quick Jump-to-Page Input */}
+                  {totalPages > 4 && (
+                    <form onSubmit={handleJumpSubmit} className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[11px] text-slate-400">Go to:</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={totalPages}
+                        placeholder={`1-${totalPages}`}
+                        value={jumpPageInput}
+                        onChange={(e) => setJumpPageInput(e.target.value)}
+                        className="w-16 bg-slate-950/80 border-white/10 text-white text-xs h-7 px-1.5 text-center rounded-lg"
+                      />
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        size="sm"
+                        disabled={!jumpPageInput.trim()}
+                        className="bg-slate-900 border-white/10 text-slate-300 hover:text-white rounded-lg text-[11px] h-7 px-2 disabled:opacity-30"
+                      >
+                        Go
+                      </Button>
+                    </form>
+                  )}
+                </div>
+              </>
             )}
           </section>
         )}

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -17,6 +17,13 @@ import {
   Download,
   CheckCircle2,
   Flame,
+  CloudSun,
+  MapPin,
+  CloudRain,
+  Sun,
+  Cloud,
+  Snowflake,
+  Zap,
 } from 'lucide-react';
 import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { useMovieDetails, useSeasonDetails, useSeriesDetails, useTrending } from '@/hooks/use-tmdb';
@@ -28,6 +35,10 @@ import { Analytics } from '@/services/analytics';
 import { ContentRelationships, ContentEntityRelations } from '@/features/contentGraph/ContentRelationships';
 import { RecommendationService } from '@/features/recommendations/recommendationService';
 import { RecommendedItem } from '@/features/recommendations/engine/types';
+import { WeatherApi, WeatherCondition } from '@/services/weather-api';
+import { GeolocationService, DetectedLocation } from '@/services/geolocation';
+import { GeoContentService } from '@/services/geo-content-service';
+import { GeoContentItem } from '@/types/geo-content';
 import RelatedMusic from '@/features/contentGraph/RelatedMusic';
 import RelatedNews from '@/features/contentGraph/RelatedNews';
 import RelatedBooks from '@/features/contentGraph/RelatedBooks';
@@ -37,6 +48,9 @@ import ContentRail from '@/components/ContentRail';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { POSTER_FALLBACK } from '@/lib/tmdb/images';
+import { getCanonicalMediaId, partitionRails } from '@/lib/deduplication';
+import MediaReviewsSection from '@/components/reviews/MediaReviewsSection';
+import { WhereToWatchProviders } from '@/components/watch/WhereToWatchProviders';
 
 const duration = (minutes: number | null | undefined) =>
   minutes ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : '—';
@@ -79,13 +93,40 @@ export default function Watch() {
   const movie = useMovieDetails(!isTv ? tmdbId : null);
   const series = useSeriesDetails(isTv ? tmdbId : null);
   const trending = useTrending('all', 'week');
-  const [season, setSeason] = useState(1);
+
+  const initialSeason = Number(params.get('season')) || 1;
+  const initialEpisode = Number(params.get('episode')) || 1;
+  const [season, setSeason] = useState(initialSeason);
+  const [currentEpisode, setCurrentEpisode] = useState(initialEpisode);
   const seasonData = useSeasonDetails(isTv ? tmdbId : null, season);
+
+  // Sync with URL query params
+  useEffect(() => {
+    const pSeason = Number(params.get('season'));
+    const pEpisode = Number(params.get('episode'));
+    if (pSeason && pSeason > 0 && pSeason !== season) {
+      setSeason(pSeason);
+    }
+    if (pEpisode && pEpisode > 0 && pEpisode !== currentEpisode) {
+      setCurrentEpisode(pEpisode);
+    }
+  }, [params, season, currentEpisode]);
+
+  // Sync season if selected season not in series seasons
+  useEffect(() => {
+    if (series.data?.seasons && series.data.seasons.length > 0) {
+      const hasSeason = series.data.seasons.some((s) => s.seasonNumber === season);
+      if (!hasSeason) {
+        const firstValid = series.data.seasons.find((s) => s.seasonNumber > 0) || series.data.seasons[0];
+        if (firstValid) {
+          setSeason(firstValid.seasonNumber);
+        }
+      }
+    }
+  }, [series.data?.seasons, season]);
 
   const [expanded, setExpanded] = useState(false);
   const [favorite, setFavorite] = useState(false);
-  const [review, setReview] = useState('');
-  const [reviews, setReviews] = useState(() => MovieService.getReviews(id));
 
   // Content Graph & Post-Watch State
   const [relations, setRelations] = useState<ContentEntityRelations>({
@@ -97,6 +138,83 @@ export default function Watch() {
   const [showPostWatch, setShowPostWatch] = useState(false);
   const [postWatchRecs, setPostWatchRecs] = useState<RecommendedItem[]>([]);
   const [hasCompleted, setHasCompleted] = useState(false);
+
+  // Weather & Geo Suggestions State
+  const [showWeatherModal, setShowWeatherModal] = useState(false);
+  const [showGeoModal, setShowGeoModal] = useState(false);
+  const [weatherState, setWeatherState] = useState<{
+    condition: WeatherCondition | null;
+    recs: RecommendedItem[];
+    loading: boolean;
+  }>({
+    condition: null,
+    recs: [],
+    loading: false,
+  });
+  const [geoState, setGeoState] = useState<{
+    location: DetectedLocation | null;
+    items: GeoContentItem[];
+    loading: boolean;
+  }>({
+    location: null,
+    items: [],
+    loading: false,
+  });
+
+  // Prefetch visitor country on mount for localized button display
+  useEffect(() => {
+    GeolocationService.detectVisitorCountry()
+      .then((loc) => {
+        setGeoState((prev) => ({ ...prev, location: loc }));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleOpenWeatherPicks = async () => {
+    setShowWeatherModal(true);
+    if (!weatherState.condition || weatherState.recs.length === 0) {
+      setWeatherState((prev) => ({ ...prev, loading: true }));
+      try {
+        const w = await WeatherApi.getWeatherByCity('Kigali');
+        if (w) {
+          const recs = await RecommendationService.getWeatherRecs(
+            w.conditionText || w.condition || 'Clear',
+            w.temperature || 22,
+            currentUser?.id,
+            6
+          );
+          setWeatherState({ condition: w, recs, loading: false });
+        } else {
+          setWeatherState((prev) => ({ ...prev, loading: false }));
+        }
+      } catch {
+        setWeatherState((prev) => ({ ...prev, loading: false }));
+      }
+    }
+  };
+
+  const handleOpenGeoPicks = async () => {
+    setShowGeoModal(true);
+    if (geoState.items.length === 0) {
+      setGeoState((prev) => ({ ...prev, loading: true }));
+      try {
+        const loc = geoState.location || (await GeolocationService.detectVisitorCountry());
+        const items = await GeoContentService.getRecommendations(loc.countryCode, 6);
+        setGeoState({ location: loc, items, loading: false });
+      } catch {
+        setGeoState((prev) => ({ ...prev, loading: false }));
+      }
+    }
+  };
+
+  const getWeatherIcon = (condition?: string) => {
+    const c = (condition || '').toLowerCase();
+    if (c.includes('rain') || c.includes('drizzle')) return <CloudRain className="w-5 h-5 text-sky-400" />;
+    if (c.includes('snow') || c.includes('ice') || c.includes('blizzard')) return <Snowflake className="w-5 h-5 text-blue-300" />;
+    if (c.includes('storm') || c.includes('thunder')) return <Zap className="w-5 h-5 text-amber-400" />;
+    if (c.includes('cloud') || c.includes('overcast') || c.includes('fog')) return <Cloud className="w-5 h-5 text-slate-300" />;
+    return <Sun className="w-5 h-5 text-amber-400" />;
+  };
 
   const { startDownload, isDownloaded, getDownloadProgress } = useOfflineDownloads();
 
@@ -133,6 +251,19 @@ export default function Watch() {
     if (currentUser) setFavorite(MovieService.isFavorite(id, currentUser.id));
   }, [currentUser, id]);
 
+  useEffect(() => {
+    if (id.startsWith('geo-')) {
+      const parts = id.split('-');
+      if (parts.length >= 3) {
+        const countryCode = parts[1];
+        const slug = parts.slice(2).join('-');
+        navigate(`/${countryCode.toLowerCase()}/movies/${slug}`, { replace: true });
+      } else {
+        navigate(`/rw/movies/${id.replace(/^geo-/, '')}`, { replace: true });
+      }
+    }
+  }, [id, navigate]);
+
   // Analytics & Content Graph loader
   useEffect(() => {
     if (media) {
@@ -157,32 +288,53 @@ export default function Watch() {
   const writers = media ? media.crew.filter((person) => /writer|screenplay/i.test(person.job)).slice(0, 2) : [];
   const director = media ? media.crew.find((person) => person.job === 'Director') : undefined;
 
-  const upNextList = useMemo(() => {
-    if (!media) return [];
-    const recs = media.recommendations || [];
-    const sims = media.similar || [];
-    const trends = trending.data?.items || [];
-    const combined: MediaDetail[] = [];
-    const seen = new Set<string | number>();
+  const partitionedWatchRails = useMemo(() => {
+    if (!media) return { upNext: [], selectedForYou: [], similarStories: [], trendingNow: [] };
 
-    const addItems = (list: any[]) => {
-      for (const item of list) {
-        if (!item) continue;
-        const key = item.tmdbId || item.id;
-        if (key && !seen.has(key) && String(item.id) !== String(rawId) && String(item.tmdbId) !== String(media.tmdbId)) {
-          seen.add(key);
-          combined.push(item);
-        }
-        if (combined.length >= 8) break;
-      }
+    const currentKey = getCanonicalMediaId(media);
+    const excludeSet = new Set<string>([currentKey, rawId.toLowerCase()]);
+
+    const recs = (media.recommendations || []) as any[];
+    const sims = (media.similar || []) as any[];
+    const trends = (trending.data?.items || []) as any[];
+
+    const partitioned = partitionRails<any>(
+      [
+        {
+          key: 'upNext',
+          items: [...recs, ...sims, ...trends],
+          maxCount: 7,
+        },
+        {
+          key: 'selectedForYou',
+          items: recs,
+          maxCount: 12,
+          fallbackItems: trends,
+        },
+        {
+          key: 'similarStories',
+          items: sims,
+          maxCount: 12,
+          fallbackItems: trends,
+        },
+        {
+          key: 'trendingNow',
+          items: trends,
+          maxCount: 12,
+        },
+      ],
+      excludeSet
+    );
+
+    return {
+      upNext: (partitioned.upNext || []) as MediaDetail[],
+      selectedForYou: (partitioned.selectedForYou || []) as MediaItem[],
+      similarStories: (partitioned.similarStories || []) as MediaItem[],
+      trendingNow: (partitioned.trendingNow || []) as MediaItem[],
     };
-
-    addItems(recs);
-    if (combined.length < 8) addItems(sims);
-    if (combined.length < 8) addItems(trends);
-
-    return combined;
   }, [media, trending.data?.items, rawId]);
+
+  const upNextList = partitionedWatchRails.upNext;
 
   const save = () => {
     if (!currentUser || !media) return toast.error('Sign in to save this title');
@@ -235,23 +387,6 @@ export default function Watch() {
         setShowPostWatch(true);
       });
     }
-  };
-
-  const submitReview = (event: FormEvent) => {
-    event.preventDefault();
-    if (!currentUser || !media) return toast.error('Sign in to write a review');
-    if (!review.trim()) return;
-    const entry = MovieService.addReview({
-      movieId: rawId,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      rating: 5,
-      comment: review,
-    });
-    setReviews((value) => [entry, ...value]);
-    setReview('');
-    Analytics.logEvent('rating_submit', { userId: currentUser.id, entityId: rawId, entityTitle: media.title });
-    toast.success('Review published');
   };
 
   if (movie.isLoading || series.isLoading) return <WatchSkeleton />;
@@ -429,7 +564,46 @@ export default function Watch() {
                   <Share2 className="h-4 w-4" /> Share
                 </button>
 
-                <div className="hidden sm:flex items-center gap-2 ml-auto text-[11px] text-slate-400 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-xl">
+                {/* Manual Trigger for Up Next Recommendations Modal */}
+                <button
+                  onClick={() => {
+                    if (postWatchRecs.length === 0 && media) {
+                      RecommendationService.getPostWatch(media.title, undefined, currentUser?.id, 3).then((recs) => {
+                        setPostWatchRecs(recs);
+                        setShowPostWatch(true);
+                      });
+                    } else {
+                      setShowPostWatch(true);
+                    }
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-orange-500/40 bg-orange-500/15 px-3 text-xs font-bold text-orange-300 hover:bg-orange-500/25 transition shadow-sm"
+                  title="Curated Recommendations for What to Watch Next"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-orange-400" />
+                  <span>Next Picks</span>
+                </button>
+
+                {/* Weather Picks Button */}
+                <button
+                  onClick={handleOpenWeatherPicks}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-sky-500/40 bg-sky-500/15 px-3 text-xs font-bold text-sky-300 hover:bg-sky-500/25 transition shadow-sm"
+                  title="Weather-based entertainment suggestions matching local atmospheric conditions"
+                >
+                  <CloudSun className="h-3.5 w-3.5 text-sky-400" />
+                  <span>Weather Picks</span>
+                </button>
+
+                {/* Local & Regional Cinema Button */}
+                <button
+                  onClick={handleOpenGeoPicks}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 text-xs font-bold text-emerald-300 hover:bg-emerald-500/25 transition shadow-sm"
+                  title="Discover authentic African & regional films based on your location"
+                >
+                  <MapPin className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>{geoState.location ? `${geoState.location.flag} Local Cinema` : 'Local Cinema'}</span>
+                </button>
+
+                <div className="hidden 2xl:flex items-center gap-2 ml-auto text-[11px] text-slate-400 bg-white/[0.03] border border-white/[0.07] px-3 py-1.5 rounded-xl">
                   <Check className="h-3.5 w-3.5 text-orange-400" />
                   <span>4K UHD • Lossless Audio</span>
                 </div>
@@ -455,6 +629,13 @@ export default function Watch() {
                   </p>
                 )}
               </div>
+
+              {/* Where to Watch Full Movie / Series (TMDB & JustWatch Providers) */}
+              <WhereToWatchProviders
+                mediaType={media.mediaType === 'tv' ? 'tv' : 'movie'}
+                tmdbId={media.tmdbId}
+                title={media.title}
+              />
             </div>
           </div>
 
@@ -488,34 +669,66 @@ export default function Watch() {
                 </div>
 
                 <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
-                  {seasonData.data?.episodes?.map((episode) => (
-                    <article
-                      key={episode.id}
-                      className="flex gap-2.5 p-2 rounded-xl border border-white/[0.05] bg-black/30 hover:border-orange-500/40 hover:bg-white/[0.03] transition group cursor-pointer"
-                    >
-                      <div className="relative w-24 h-14 shrink-0 rounded-lg overflow-hidden bg-slate-900">
-                        <img
-                          src={episode.stillUrl || media.backdropUrl || media.imageUrl}
-                          alt=""
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <span className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-white">
-                          {episode.runtime ? `${episode.runtime}m` : '—'}
-                        </span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-bold text-orange-400 uppercase">
-                          Episode {episode.episodeNumber}
-                        </p>
-                        <h3 className="truncate text-xs font-semibold text-white group-hover:text-orange-300 transition-colors">
-                          {episode.name}
-                        </h3>
-                        <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                          {episode.overview || 'Watch episode now on OrangeFlix'}
-                        </p>
-                      </div>
-                    </article>
-                  )) || <div className="text-xs text-slate-500 py-4 text-center">Loading episodes…</div>}
+                  {seasonData.isLoading ? (
+                    <div className="text-xs text-slate-400 py-6 text-center flex flex-col items-center gap-2">
+                      <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                      <span>Loading season episodes...</span>
+                    </div>
+                  ) : seasonData.data && seasonData.data.length > 0 ? (
+                    seasonData.data.map((episode) => {
+                      const isCurrent = currentEpisode === episode.episodeNumber;
+                      return (
+                        <article
+                          key={episode.id}
+                          onClick={() => {
+                            setCurrentEpisode(episode.episodeNumber);
+                            navigate(`/watch/tv-${tmdbId}?season=${season}&episode=${episode.episodeNumber}`, { replace: true });
+                          }}
+                          className={`flex gap-2.5 p-2 rounded-xl border transition group cursor-pointer ${
+                            isCurrent
+                              ? 'bg-orange-500/15 border-orange-500/60 shadow-md shadow-orange-500/10'
+                              : 'bg-black/30 border-white/[0.05] hover:border-orange-500/40 hover:bg-white/[0.03]'
+                          }`}
+                        >
+                          <div className="relative w-24 h-14 shrink-0 rounded-lg overflow-hidden bg-slate-900">
+                            <img
+                              src={episode.stillUrl || media.backdropUrl || media.imageUrl}
+                              alt={episode.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            />
+                            <span className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-white">
+                              {episode.runtime ? `${episode.runtime}m` : '45m'}
+                            </span>
+                            {isCurrent && (
+                              <div className="absolute inset-0 bg-orange-500/30 flex items-center justify-center">
+                                <Play className="w-4 h-4 text-white fill-current animate-pulse" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-[10px] font-bold text-orange-400 uppercase">
+                                Episode {episode.episodeNumber}
+                              </p>
+                              {isCurrent && (
+                                <span className="bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.2 rounded-full">
+                                  Playing
+                                </span>
+                              )}
+                            </div>
+                            <h3 className={`truncate text-xs font-semibold ${isCurrent ? 'text-orange-300' : 'text-white group-hover:text-orange-300'} transition-colors`}>
+                              {episode.name}
+                            </h3>
+                            <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                              {episode.overview || 'Watch episode now on OrangeFlix'}
+                            </p>
+                          </div>
+                        </article>
+                      );
+                    })
+                  ) : (
+                    <div className="text-xs text-slate-500 py-4 text-center">No episodes found for this season.</div>
+                  )}
                 </div>
               </div>
             )}
@@ -628,90 +841,42 @@ export default function Watch() {
           <RelatedBooks sourceBook={relations.sourceBook} isLoading={isLoadingRelations} />
           <RelatedNews news={relations.news} isLoading={isLoadingRelations} />
 
-          {/* Recommendation Rails */}
-          <ContentRail
-            title="Because you watched this"
-            eyebrow="Selected for you"
-            items={media.recommendations}
-            href={isTv ? '/series' : '/movies'}
-          />
-          <ContentRail
-            title="More like this"
-            eyebrow="Similar stories"
-            items={media.similar}
-            href={isTv ? '/series' : '/movies'}
-          />
-          <ContentRail
-            title="Trending now"
-            eyebrow="What everyone is watching"
-            items={trending.data?.items.slice(0, 12) || []}
-            href="/trending"
-            loading={trending.isLoading}
-          />
+          {/* Recommendation Rails (Guaranteed 100% Unique & Deduplicated) */}
+          {partitionedWatchRails.selectedForYou.length > 0 && (
+            <ContentRail
+              title="Because you watched this"
+              eyebrow="Selected for you"
+              items={partitionedWatchRails.selectedForYou}
+              href={isTv ? '/series' : '/movies'}
+            />
+          )}
+          {partitionedWatchRails.similarStories.length > 0 && (
+            <ContentRail
+              title="More like this"
+              eyebrow="Similar stories"
+              items={partitionedWatchRails.similarStories}
+              href={isTv ? '/series' : '/movies'}
+            />
+          )}
+          {partitionedWatchRails.trendingNow.length > 0 && (
+            <ContentRail
+              title="Trending now"
+              eyebrow="What everyone is watching"
+              items={partitionedWatchRails.trendingNow}
+              href="/trending"
+              loading={trending.isLoading}
+            />
+          )}
 
-          {/* Community Reviews & Discussions (Full Width) */}
-          <section className="rounded-2xl border border-white/[.08] bg-white/[.02] p-5 sm:p-7 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400">Audience Reactions</p>
-                <h2 className="text-lg sm:text-xl font-bold text-white">
-                  Reviews & Ratings ({reviews.length})
-                </h2>
-              </div>
-              <div className="flex items-center gap-2 bg-white/[0.04] border border-white/10 px-3.5 py-1.5 rounded-xl">
-                <Star className="h-4 w-4 fill-orange-400 text-orange-400" />
-                <span className="text-base font-bold text-white">{media.voteAverage.toFixed(1)}</span>
-                <span className="text-xs text-slate-400">/ 10</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* Review Composer */}
-              <div className="lg:col-span-5">
-                {currentUser ? (
-                  <form onSubmit={submitReview} className="space-y-3 p-4 rounded-xl border border-white/[.07] bg-black/30">
-                    <p className="text-xs font-semibold text-slate-300">Share your thoughts</p>
-                    <textarea
-                      value={review}
-                      onChange={(event) => setReview(event.target.value)}
-                      className="w-full min-h-[90px] rounded-xl border border-white/[.1] bg-black/50 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-orange-400 transition resize-none"
-                      placeholder="Write your review for this title…"
-                    />
-                    <button className="premium-button w-full rounded-xl py-2 text-xs font-semibold shadow-md shadow-orange-500/20">
-                      Post Review
-                    </button>
-                  </form>
-                ) : (
-                  <div className="p-4 rounded-xl border border-white/[.07] bg-black/30 text-center">
-                    <p className="text-xs text-slate-400">
-                      <Link to="/login" className="font-semibold text-orange-400 hover:underline">
-                        Sign in
-                      </Link>{' '}
-                      to write a review and rate this title.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Reviews List */}
-              <div className="lg:col-span-7 space-y-3">
-                {reviews.slice(0, 6).map((entry) => (
-                  <article key={entry.id} className="rounded-xl border border-white/[.06] bg-black/20 p-3.5 space-y-1">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-xs font-semibold text-white">{entry.userName}</span>
-                      <span className="text-xs text-orange-400">{'★'.repeat(entry.rating)}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-300 leading-relaxed">{entry.comment}</p>
-                  </article>
-                ))}
-                {!reviews.length && (
-                  <p className="py-6 text-center text-xs text-slate-500">
-                    No reviews yet. Be the first to share your rating!
-                  </p>
-                )}
-              </div>
-            </div>
-          </section>
+          {/* Community & TMDB Critic Reviews (Full Width) */}
+          <MediaReviewsSection
+            mediaType={media.mediaType === 'tv' ? 'tv' : 'movie'}
+            tmdbId={media.tmdbId}
+            mediaTitle={media.title}
+            voteAverage={media.voteAverage}
+            voteCount={media.voteCount}
+            rawId={rawId}
+          />
         </div>
       </div>
 
@@ -791,6 +956,201 @@ export default function Watch() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowPostWatch(false)}
+                className="text-xs text-slate-400 ml-auto"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Weather Recommendations Modal */}
+      {showWeatherModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-sky-500/30 bg-[#090e18] p-6 shadow-2xl space-y-5">
+            <button
+              onClick={() => setShowWeatherModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white p-1"
+              aria-label="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1 text-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/20 text-sky-300 text-xs font-bold mb-1">
+                {getWeatherIcon(weatherState.condition?.conditionText || weatherState.condition?.condition)}
+                <span>
+                  {weatherState.condition
+                    ? `${weatherState.condition.city} • ${Math.round(weatherState.condition.temperature)}°C • ${weatherState.condition.conditionText}`
+                    : 'Local Weather'}
+                </span>
+              </div>
+              <h2 className="text-2xl font-extrabold text-white">Atmospheric Weather Picks 🌤️</h2>
+              <p className="text-xs text-slate-400">
+                {weatherState.condition?.matchReason || 'Curated cinematic stories tailored for current skies and temperature'}
+              </p>
+            </div>
+
+            {weatherState.loading ? (
+              <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                <div className="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-slate-400">Matching atmospheric picks for your weather...</p>
+              </div>
+            ) : weatherState.recs.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No weather suggestions available at the moment.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {weatherState.recs.map((rec) => (
+                  <div
+                    key={rec.id}
+                    className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3 flex flex-col justify-between hover:border-sky-500/40 transition group"
+                  >
+                    <div className="space-y-2">
+                      <img
+                        src={rec.posterUrl || POSTER_FALLBACK}
+                        alt={rec.title}
+                        className="w-full h-36 object-cover rounded-xl bg-slate-900"
+                      />
+                      <div>
+                        <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-sky-300 transition-colors">
+                          {rec.title}
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          {rec.genres[0] || 'Film'} • ★ {rec.voteAverage}
+                        </p>
+                      </div>
+                    </div>
+
+                    <Link
+                      to={`/watch/${rec.mediaType}-${rec.tmdbId}`}
+                      onClick={() => setShowWeatherModal(false)}
+                      className="mt-3 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-400 transition shadow-md shadow-sky-500/20"
+                    >
+                      <Play className="w-3 h-3 fill-current" /> Watch Now
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/[.08]">
+              <Link
+                to="/movie-night"
+                onClick={() => setShowWeatherModal(false)}
+                className="text-xs text-sky-400 hover:underline flex items-center gap-1.5 font-semibold"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Explore Full Movie Night & Moods
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowWeatherModal(false)}
+                className="text-xs text-slate-400 ml-auto"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Geo / Regional Cinema Suggestions Modal */}
+      {showGeoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-emerald-500/30 bg-[#090e18] p-6 shadow-2xl space-y-5">
+            <button
+              onClick={() => setShowGeoModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white p-1"
+              aria-label="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1 text-center">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold mb-1">
+                <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                <span>
+                  {geoState.location ? `${geoState.location.flag} ${geoState.location.countryName} Cinema` : 'Local Cinema'}
+                </span>
+              </div>
+              <h2 className="text-2xl font-extrabold text-white">Local & African Cinema 🌍</h2>
+              <p className="text-xs text-slate-400">
+                Authentic African cinema, movies, and series trending in your territory
+              </p>
+            </div>
+
+            {geoState.loading ? (
+              <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-slate-400">Loading regional cinema spotlight...</p>
+              </div>
+            ) : geoState.items.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No local cinema found for this territory right now.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {geoState.items.map((item) => {
+                  const countryCode = geoState.location?.countryCode.toLowerCase() || 'rw';
+                  const itemSlug = item.slug || item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3 flex flex-col justify-between hover:border-emerald-500/40 transition group"
+                    >
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <img
+                            src={item.thumbnailUrl || POSTER_FALLBACK}
+                            alt={item.title}
+                            className="w-full h-36 object-cover rounded-xl bg-slate-900"
+                          />
+                          {item.videoDuration && (
+                            <span className="absolute bottom-1.5 right-1.5 bg-black/80 px-1.5 py-0.5 rounded text-[10px] text-white font-mono">
+                              {item.videoDuration}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-emerald-300 transition-colors">
+                            {item.title}
+                          </p>
+                          <p className="text-[10px] text-slate-400 line-clamp-1">
+                            {item.channelTitle || item.genre?.[0] || 'African Cinema'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <Link
+                        to={`/${countryCode}/movies/${itemSlug}`}
+                        onClick={() => setShowGeoModal(false)}
+                        className="mt-3 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition shadow-md shadow-emerald-600/20"
+                      >
+                        <Play className="w-3 h-3 fill-current" /> Watch Local Film
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/[.08]">
+              {geoState.location && (
+                <Link
+                  to={`/${geoState.location.countryCode.toLowerCase()}/movies`}
+                  onClick={() => setShowGeoModal(false)}
+                  className="text-xs text-emerald-400 hover:underline flex items-center gap-1.5 font-semibold"
+                >
+                  <MapPin className="w-3.5 h-3.5" /> Explore {geoState.location.countryName} Catalog
+                </Link>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowGeoModal(false)}
                 className="text-xs text-slate-400 ml-auto"
               >
                 Close

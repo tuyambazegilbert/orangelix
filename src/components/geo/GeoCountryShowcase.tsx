@@ -1,6 +1,6 @@
 /**
  * OrangeFlix Geo Country Showcase Section
- * Compact, low-height pills bar allowing quick switching across African & Global cinema territories.
+ * Ultra-compact, space-optimized territory ribbon for seamless regional cinema switching.
  */
 
 import { Link } from 'react-router-dom';
@@ -11,23 +11,25 @@ interface GeoCountryShowcaseProps {
   currentCountryCode?: string;
   countries: GeoCountryConfig[];
   onSelectCountry?: (code: string) => void;
+  showTitle?: boolean;
 }
 
 export default function GeoCountryShowcase({
   currentCountryCode = 'RW',
   countries,
   onSelectCountry,
+  showTitle = true,
 }: GeoCountryShowcaseProps) {
   return (
-    <section className="py-2 space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-          <Globe className="w-3.5 h-3.5" /> Explore Cinema Territories
-        </p>
-      </div>
+    <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-none py-1">
+      {showTitle && (
+        <span className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1 shrink-0 select-none">
+          <Globe className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Territory:</span>
+        </span>
+      )}
 
-      {/* Compact, Sleek Pill Chips (Low Height & Clean Responsive Layout) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+      <div className="flex items-center gap-1.5 shrink-0">
         {countries.map((c) => {
           const isActive = c.countryCode.toUpperCase() === currentCountryCode.toUpperCase();
           return (
@@ -35,13 +37,13 @@ export default function GeoCountryShowcase({
               key={c.countryCode}
               to={`/${c.countryCode.toLowerCase()}/movies`}
               onClick={() => onSelectCountry?.(c.countryCode)}
-              className={`inline-flex items-center gap-2 h-8 px-3 rounded-full text-xs font-semibold shrink-0 transition-all duration-200 border ${
+              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-semibold shrink-0 transition-all duration-150 border ${
                 isActive
-                  ? 'bg-orange-500 border-orange-400 text-white shadow-md shadow-orange-500/25 scale-[1.03]'
-                  : 'bg-gray-900/80 border-gray-800 text-gray-300 hover:text-white hover:border-orange-500/40 hover:bg-gray-800'
+                  ? 'bg-orange-500 border-orange-400 text-white shadow-sm shadow-orange-500/30 font-bold'
+                  : 'bg-white/[.04] border-white/10 text-slate-300 hover:text-white hover:border-orange-500/40 hover:bg-white/[.08]'
               }`}
             >
-              <span className="text-sm">{c.flagEmoji}</span>
+              <span className="text-xs">{c.flagEmoji}</span>
               <span className="truncate">{c.name}</span>
               {isActive && (
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
@@ -50,6 +52,6 @@ export default function GeoCountryShowcase({
           );
         })}
       </div>
-    </section>
+    </div>
   );
 }

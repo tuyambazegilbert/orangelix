@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   ArrowRight,
   Download,
+  BookOpen,
 } from 'lucide-react';
 import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { useAuth } from '@/contexts/AuthContext';
@@ -30,6 +31,7 @@ import { GeoContentService } from '@/services/geo-content-service';
 import { GeoContentItem } from '@/types/geo-content';
 import { tmdbClient } from '@/lib/tmdb/client';
 import { tmdbEndpoints } from '@/lib/tmdb/endpoints';
+import { getInstantAutocomplete, AutocompleteResult } from '@/lib/search/autocomplete';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,13 +53,11 @@ const primaryLinks = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/movies', label: 'Movies', icon: Compass },
   { to: '/series', label: 'TV Shows', icon: Tv },
-  { to: '/downloads', label: 'Downloads', icon: Download },
-  { to: '/trending', label: 'Trending', icon: Sparkles },
-  { to: '/new', label: 'New Releases', icon: Moon },
-  { to: '/genres', label: 'Genres', icon: Grid },
-  { to: '/favorites', label: 'My List', icon: Bookmark },
-  { to: '/news', label: 'News', icon: Newspaper },
   { to: '/music', label: 'Soundtracks', icon: Music2 },
+  { to: '/news', label: 'News & Editorial', icon: Newspaper },
+  { to: '/books', label: 'Books & Adaptations', icon: BookOpen },
+  { to: '/favorites', label: 'My List', icon: Bookmark },
+  { to: '/downloads', label: 'Downloads', icon: Download },
 ];
 
 interface QuickTmdbMatch {
@@ -99,6 +99,9 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const activeCountry = useMemo(() => getCountryConfig(currentCountryCode), [currentCountryCode]);
+
+  // Instant Sub-millisecond Autocomplete Suggestions
+  const autocompleteData = useMemo(() => getInstantAutocomplete(query, 5), [query]);
 
   useEffect(() => {
     const update = () => setScrolled(window.scrollY > 12);
@@ -283,36 +286,36 @@ export default function Navbar() {
             </DropdownMenu>
 
             <NavLink
-              to="/trending"
+              to="/music"
               className={({ isActive }) =>
                 `rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
                   isActive ? 'bg-white/[.08] text-orange-400' : 'text-slate-300 hover:text-white hover:bg-white/[.04]'
                 }`
               }
             >
-              Trending
+              Soundtracks
             </NavLink>
 
             <NavLink
-              to="/new"
+              to="/news"
               className={({ isActive }) =>
                 `rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
                   isActive ? 'bg-white/[.08] text-orange-400' : 'text-slate-300 hover:text-white hover:bg-white/[.04]'
                 }`
               }
             >
-              New
+              News
             </NavLink>
 
             <NavLink
-              to="/genres"
+              to="/books"
               className={({ isActive }) =>
                 `rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
                   isActive ? 'bg-white/[.08] text-orange-400' : 'text-slate-300 hover:text-white hover:bg-white/[.04]'
                 }`
               }
             >
-              Genres
+              Books
             </NavLink>
 
             <NavLink
@@ -359,18 +362,75 @@ export default function Navbar() {
               </label>
             </form>
 
-            {/* Quick Discovery Dropdown */}
+            {/* Quick Discovery Dropdown with Solid Card Background */}
             {isDesktopFocused && query.trim().length >= 2 && (
-              <div className="absolute right-0 top-full mt-2 w-[380px] rounded-2xl bg-[#090e1a]/98 border border-white/[.12] p-2.5 shadow-2xl backdrop-blur-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
-                <div className="max-h-[70vh] overflow-y-auto space-y-3 scrollbar-none">
+              <div className="absolute right-0 top-full mt-2 w-[420px] rounded-2xl bg-[#0b101d] border border-slate-700/90 p-3 shadow-[0_25px_70px_rgba(0,0,0,0.98)] z-[100] animate-in fade-in zoom-in-95 duration-150">
+                <div className="max-h-[72vh] overflow-y-auto space-y-3.5 pr-0.5 scrollbar-none">
+                  {/* 0. Typo & Did You Mean Suggestion */}
+                  {autocompleteData.didYouMean && autocompleteData.didYouMean.toLowerCase() !== query.toLowerCase() && (
+                    <div className="px-3 py-2 rounded-xl bg-orange-950/80 border border-orange-500/40 flex items-center justify-between text-xs shadow-sm">
+                      <span className="text-slate-200">
+                        Did you mean <strong className="text-orange-400 capitalize">{autocompleteData.didYouMean}</strong>?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery(autocompleteData.didYouMean!);
+                          navigate(`/search?q=${encodeURIComponent(autocompleteData.didYouMean!)}`);
+                          setIsDesktopFocused(false);
+                        }}
+                        className="text-[11px] font-bold text-orange-400 hover:text-orange-300 hover:underline flex items-center gap-1"
+                      >
+                        Search &rarr;
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 0.1 Categorized Entity Instant Suggestions */}
+                  {autocompleteData.suggestions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="px-1 text-[10px] uppercase font-black tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-orange-400" /> Instant Match Suggestions
+                      </div>
+                      <div className="space-y-1">
+                        {autocompleteData.suggestions.map((sug) => (
+                          <button
+                            key={sug.id}
+                            type="button"
+                            onClick={() => {
+                              setQuery(sug.query);
+                              navigate(`/search?q=${encodeURIComponent(sug.query)}`);
+                              setIsDesktopFocused(false);
+                            }}
+                            className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/[.06] hover:border-slate-700 transition text-left group"
+                          >
+                            <div className="min-w-0 flex-1 pr-2">
+                              <p className="text-xs font-bold text-white truncate group-hover:text-orange-400 transition">
+                                {sug.title}
+                              </p>
+                              {sug.subtitle && (
+                                <p className="text-[10px] text-slate-400 truncate mt-0.5">{sug.subtitle}</p>
+                              )}
+                            </div>
+                            {sug.badge && (
+                              <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-[9px] px-1.5 py-0.5 shrink-0 font-semibold">
+                                {sug.badge}
+                              </Badge>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* 1. African & Global Geo Cinema Section */}
                   {quickGeoMatches.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-orange-400 flex items-center justify-between">
+                    <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                      <div className="px-1 text-[10px] uppercase font-black tracking-wider text-orange-400 flex items-center justify-between">
                         <span className="flex items-center gap-1.5">
-                          <Globe className="w-3 h-3" /> Geo Cinema ({quickGeoMatches.length})
+                          <Globe className="w-3.5 h-3.5 text-orange-400" /> African & Regional Cinema ({quickGeoMatches.length})
                         </span>
-                        <span className="text-[9px] text-gray-400 font-normal">Direct Stream</span>
+                        <span className="text-[9px] text-slate-400 font-normal">Direct Stream</span>
                       </div>
 
                       <div className="space-y-1">
@@ -386,21 +446,20 @@ export default function Navbar() {
                                 setIsDesktopFocused(false);
                                 setQuery('');
                               }}
-                              className="w-full flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[.08] transition text-left group"
+                              className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/[.06] hover:border-slate-700 transition text-left group"
                             >
-                              <div className="w-14 h-9 rounded-lg overflow-hidden bg-gray-900 shrink-0 relative">
+                              <div className="w-14 h-9 rounded-lg overflow-hidden bg-slate-950 shrink-0 relative border border-slate-800">
                                 <img
                                   src={item.thumbnailUrl || item.posterUrl || `https://i.ytimg.com/vi/${item.youtubeVideoId}/hqdefault.jpg`}
                                   alt={item.title}
                                   className="w-full h-full object-cover group-hover:scale-105 transition"
                                 />
-                                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition" />
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-bold text-white truncate group-hover:text-orange-400 transition">
                                   {item.title}
                                 </p>
-                                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5">
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
                                   <span>{cConfig.flagEmoji} {cConfig.name}</span>
                                   {item.durationFormatted && (
                                     <>
@@ -419,9 +478,9 @@ export default function Navbar() {
 
                   {/* 2. TMDB Movies & Series Section */}
                   {quickTmdbMatches.length > 0 && (
-                    <div className="space-y-1 pt-1 border-t border-white/[.06]">
-                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <Film className="w-3 h-3 text-orange-400" /> Movies & TV Series
+                    <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                      <div className="px-1 text-[10px] uppercase font-black tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Film className="w-3.5 h-3.5 text-orange-400" /> Movies & TV Series
                       </div>
 
                       <div className="space-y-1">
@@ -443,9 +502,9 @@ export default function Navbar() {
                                 setIsDesktopFocused(false);
                                 setQuery('');
                               }}
-                              className="w-full flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[.08] transition text-left group"
+                              className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/[.06] hover:border-slate-700 transition text-left group"
                             >
-                              <div className="w-8 h-11 rounded-lg overflow-hidden bg-gray-900 shrink-0">
+                              <div className="w-8 h-11 rounded-lg overflow-hidden bg-slate-950 shrink-0 border border-slate-800">
                                 {poster ? (
                                   <img src={poster} alt={title} className="w-full h-full object-cover" />
                                 ) : (
@@ -457,7 +516,7 @@ export default function Navbar() {
                                   {title}
                                 </p>
                                 <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5">
-                                  <Badge variant="outline" className="text-[9px] px-1 py-0 border-gray-700">
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 border-gray-700 bg-slate-950">
                                     {isTv ? 'TV' : 'Movie'}
                                   </Badge>
                                   {year && <span>{year}</span>}
@@ -485,10 +544,10 @@ export default function Navbar() {
                   <button
                     type="button"
                     onClick={submitSearch}
-                    className="w-full text-center py-2 mt-1 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs font-bold transition flex items-center justify-center gap-1 border border-orange-500/20"
+                    className="w-full text-center py-2.5 mt-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-orange-500/25"
                   >
                     <span>View all results for "{query}"</span>
-                    <ArrowRight className="w-3 h-3" />
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -623,13 +682,51 @@ export default function Navbar() {
 
               {/* Mobile Quick Discovery Results */}
               {isMobileFocused && query.trim().length >= 2 && (
-                <div className="mt-2 w-full rounded-2xl bg-[#090e1a]/98 border border-white/[.12] p-2.5 shadow-2xl backdrop-blur-2xl space-y-3">
+                <div className="mt-2 w-full rounded-2xl bg-[#0b101d] border border-slate-700/90 p-3 shadow-2xl space-y-3">
+                  {/* Instant Autocomplete Suggestions */}
+                  {autocompleteData.suggestions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="px-1 text-[10px] uppercase font-black tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-orange-400" /> Instant Match Suggestions
+                      </div>
+                      <div className="space-y-1">
+                        {autocompleteData.suggestions.slice(0, 4).map((sug) => (
+                          <button
+                            key={sug.id}
+                            type="button"
+                            onClick={() => {
+                              setQuery(sug.query);
+                              navigate(`/search?q=${encodeURIComponent(sug.query)}`);
+                              setIsMobileFocused(false);
+                              setOpen(false);
+                            }}
+                            className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-white/[.06] text-left group"
+                          >
+                            <div className="min-w-0 flex-1 pr-2">
+                              <p className="text-xs font-bold text-white truncate group-hover:text-orange-400">
+                                {sug.title}
+                              </p>
+                              {sug.subtitle && (
+                                <p className="text-[10px] text-slate-400 truncate mt-0.5">{sug.subtitle}</p>
+                              )}
+                            </div>
+                            {sug.badge && (
+                              <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-[9px] px-1.5 py-0.5 shrink-0 font-semibold">
+                                {sug.badge}
+                              </Badge>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Geo Cinema */}
                   {quickGeoMatches.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-orange-400 flex items-center justify-between">
+                    <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                      <div className="px-1 text-[10px] uppercase font-black tracking-wider text-orange-400 flex items-center justify-between">
                         <span className="flex items-center gap-1.5">
-                          <Globe className="w-3 h-3" /> Geo Cinema ({quickGeoMatches.length})
+                          <Globe className="w-3.5 h-3.5 text-orange-400" /> African & Regional Cinema ({quickGeoMatches.length})
                         </span>
                       </div>
                       <div className="space-y-1">
@@ -646,16 +743,16 @@ export default function Navbar() {
                                 setOpen(false);
                                 setQuery('');
                               }}
-                              className="w-full flex items-center gap-2 p-1.5 rounded-xl hover:bg-white/[.08] text-left"
+                              className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-white/[.06] text-left"
                             >
                               <img
                                 src={item.thumbnailUrl || item.posterUrl || `https://i.ytimg.com/vi/${item.youtubeVideoId}/hqdefault.jpg`}
                                 alt={item.title}
-                                className="w-12 h-8 rounded-lg object-cover bg-gray-900 shrink-0"
+                                className="w-12 h-8 rounded-lg object-cover bg-slate-950 shrink-0 border border-slate-800"
                               />
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-bold text-white truncate">{item.title}</p>
-                                <p className="text-[10px] text-gray-400">{cConfig.flagEmoji} {cConfig.name}</p>
+                                <p className="text-[10px] text-slate-400">{cConfig.flagEmoji} {cConfig.name}</p>
                               </div>
                             </button>
                           );
@@ -666,9 +763,9 @@ export default function Navbar() {
 
                   {/* TMDB Matches */}
                   {quickTmdbMatches.length > 0 && (
-                    <div className="space-y-1 pt-1 border-t border-white/[.06]">
-                      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <Film className="w-3 h-3 text-orange-400" /> Movies & TV Series
+                    <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                      <div className="px-1 text-[10px] uppercase font-black tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Film className="w-3.5 h-3.5 text-orange-400" /> Movies & TV Series
                       </div>
                       <div className="space-y-1">
                         {quickTmdbMatches.map((item: QuickTmdbMatch) => {
@@ -685,11 +782,11 @@ export default function Navbar() {
                                 setOpen(false);
                                 setQuery('');
                               }}
-                              className="w-full flex items-center gap-2 p-1.5 rounded-xl hover:bg-white/[.08] text-left"
+                              className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-white/[.06] text-left"
                             >
                               <div className="min-w-0 flex-1">
-                                <p className="text-xs font-semibold text-white truncate">{title}</p>
-                                <span className="text-[10px] text-gray-400">{isTv ? 'TV Show' : 'Movie'}</span>
+                                <p className="text-xs font-bold text-white truncate">{title}</p>
+                                <span className="text-[10px] text-slate-400">{isTv ? 'TV Show' : 'Movie'}</span>
                               </div>
                             </button>
                           );
@@ -702,10 +799,10 @@ export default function Navbar() {
                   <button
                     type="button"
                     onClick={submitSearch}
-                    className="w-full text-center py-2 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs font-bold flex items-center justify-center gap-1 border border-orange-500/20"
+                    className="w-full text-center py-2.5 mt-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-orange-500/25"
                   >
                     <span>View all results for "{query}"</span>
-                    <ArrowRight className="w-3 h-3" />
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}

@@ -45,6 +45,11 @@ export interface WatchHistoryItem {
   durationSeconds?: number;
   genre?: string[];
   watchedAt: string;
+  country?: string;
+  countryCode?: string;
+  slug?: string;
+  youtubeVideoId?: string;
+  channelTitle?: string;
 }
 
 export interface UserRating {

@@ -16,6 +16,7 @@ import {
   Film,
   Sparkles,
   Check,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,7 +29,7 @@ export default function NewsDetail() {
   useEffect(() => {
     if (!slug) return;
     const load = async () => {
-      setLoading(false);
+      setLoading(true);
       const res = await NewsApi.getArticleBySlug(slug);
       setArticle(res);
       setLoading(false);
@@ -132,6 +133,16 @@ export default function NewsDetail() {
             </div>
 
             <div className="flex items-center gap-2">
+              {article.sourceUrl && (
+                <a
+                  href={article.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 px-3 py-1.5 rounded-lg border border-orange-500/30 bg-orange-500/10 transition"
+                >
+                  <span>Source Archive</span> <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
               <Button
                 variant="outline"
                 size="sm"

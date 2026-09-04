@@ -174,3 +174,47 @@ export interface TMDBSeasonDetailResponse {
   episodes: TMDBEpisode[];
 }
 
+export interface TMDBReview {
+  id: string;
+  author: string;
+  author_details: {
+    name: string;
+    username: string;
+    avatar_path: string | null;
+    rating: number | null;
+  };
+  content: string;
+  created_at: string;
+  updated_at: string;
+  url: string;
+}
+
+export interface TMDBReviewsResponse {
+  id: number;
+  page: number;
+  results: TMDBReview[];
+  total_pages: number;
+  total_results: number;
+}
+
+export interface TMDBWatchProviderItem {
+  logo_path: string | null;
+  provider_id: number;
+  provider_name: string;
+  display_priority: number;
+}
+
+export interface TMDBCountryWatchProviders {
+  link?: string;
+  flatrate?: TMDBWatchProviderItem[];
+  rent?: TMDBWatchProviderItem[];
+  buy?: TMDBWatchProviderItem[];
+  free?: TMDBWatchProviderItem[];
+  ads?: TMDBWatchProviderItem[];
+}
+
+export interface TMDBWatchProvidersResponse {
+  id: number;
+  results: Record<string, TMDBCountryWatchProviders>;
+}
+

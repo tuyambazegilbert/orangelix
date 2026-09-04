@@ -42,8 +42,15 @@
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 .rise { animation: rise .45s ease both; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide,
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
 
 .min-h-screen.bg-gray-950, .min-h-screen.bg-gradient-to-br { background: transparent !important; }
 .bg-gray-900\/60, .bg-gray-900\/50 { background: rgba(13, 19, 32, .82) !important; border-color: rgba(255,255,255,.08) !important; }

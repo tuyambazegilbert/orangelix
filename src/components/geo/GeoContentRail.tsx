@@ -4,11 +4,12 @@
  * Features seamless infinite looping, zero-tremble smooth scroll, and clean hover pause.
  */
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GeoContentItem } from '@/types/geo-content';
 import CountryMovieCard from './CountryMovieCard';
+import { deduplicateList } from '@/lib/deduplication';
 
 interface GeoContentRailProps {
   title: string;
@@ -35,6 +36,8 @@ export default function GeoContentRail({
   const [paused, setPaused] = useState(false);
   const pauseTimer = useRef<number | undefined>(undefined);
 
+  const displayItems = useMemo(() => deduplicateList(items), [items]);
+
   const move = (direction: number, manual = true) => {
     const rail = ref.current;
     if (!rail) return;
@@ -46,19 +49,19 @@ export default function GeoContentRail({
     }
 
     const amount = Math.max(rail.clientWidth * 0.72, 280);
-    const half = rail.scrollWidth / 2;
+    const maxScroll = rail.scrollWidth - rail.clientWidth;
 
-    if (direction > 0 && rail.scrollLeft + amount >= half - 24) {
+    if (direction > 0 && rail.scrollLeft + amount >= maxScroll - 16) {
       rail.scrollTo({ left: 0, behavior: 'smooth' });
-    } else if (direction < 0 && rail.scrollLeft <= 12) {
-      rail.scrollTo({ left: Math.max(0, half - amount), behavior: 'smooth' });
+    } else if (direction < 0 && rail.scrollLeft <= 16) {
+      rail.scrollTo({ left: Math.max(0, maxScroll), behavior: 'smooth' });
     } else {
       rail.scrollBy({ left: direction * amount, behavior: 'smooth' });
     }
   };
 
   useEffect(() => {
-    if (loading || !items || items.length < 2 || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (loading || !displayItems || displayItems.length < 2 || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return;
     }
 
@@ -67,7 +70,7 @@ export default function GeoContentRail({
     }, 5200);
 
     return () => window.clearInterval(timer);
-  }, [items.length, loading, paused]);
+  }, [displayItems.length, loading, paused]);
 
   const pauseForInteraction = () => {
     setPaused(true);
@@ -75,9 +78,7 @@ export default function GeoContentRail({
     pauseTimer.current = window.setTimeout(() => setPaused(false), 6500);
   };
 
-  if (!loading && (!items || items.length === 0)) return null;
-
-  const displayItems = items && items.length > 1 ? [...items, ...items] : items || [];
+  if (!loading && (!displayItems || displayItems.length === 0)) return null;
 
   return (
     <section className="group/rail py-4 sm:py-6">
@@ -86,13 +87,13 @@ export default function GeoContentRail({
         <div>
           {eyebrow && (
             <p className="section-eyebrow mb-1 flex items-center gap-1">
-              {icon || <Sparkles className="w-3 h-3" />}
+              {icon || <Sparkles className="w-3 h-3 text-orange-400" />}
               {eyebrow}
             </p>
           )}
           <h2 className="section-title flex items-center gap-2">
             {title}
-            {!loading && <span className="text-xs font-normal text-slate-500 font-mono">({items.length})</span>}
+            {!loading && <span className="text-xs font-normal text-slate-500 font-mono">({displayItems.length})</span>}
           </h2>
         </div>
 
@@ -127,7 +128,7 @@ export default function GeoContentRail({
         </div>
       </div>
 
-      {/* Infinite Smooth Scroll Container */}
+      {/* Smooth Scroll Container */}
       <div
         ref={ref}
         onMouseEnter={() => setPaused(true)}

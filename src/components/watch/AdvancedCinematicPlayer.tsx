@@ -36,6 +36,9 @@ import {
   Clock,
   Ratio,
   Zap,
+  ChevronLeft,
+  ChevronRight,
+  Check,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -136,8 +139,8 @@ export default function AdvancedCinematicPlayer({
   const { startDownload, isDownloaded, getDownloadProgress } = useOfflineDownloads();
   const { openMiniPlayer } = useMiniPlayer();
 
-  // Playback States
-  const [isPlaying, setIsPlaying] = useState(false);
+  // Playback States (Auto-play enabled on mount)
+  const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(initialProgress);
   const [duration, setDuration] = useState(durationMinutes ? durationMinutes * 60 : 0);
   const [bufferedPercent, setBufferedPercent] = useState(0);
@@ -154,6 +157,9 @@ export default function AdvancedCinematicPlayer({
   const [ambientGlow, setAmbientGlow] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isScreenLocked, setIsScreenLocked] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'main' | 'quality' | 'speed' | 'aspect' | 'timer'>('main');
+  const [hasStartedPlayback, setHasStartedPlayback] = useState(true);
 
   // Gesture & HUD States
   const [gestureHUD, setGestureHUD] = useState<{
@@ -187,6 +193,32 @@ export default function AdvancedCinematicPlayer({
       setActiveEngine('html5');
     }
   }, [videoUrl, isYoutubeSource, isOffline]);
+
+  // Autoplay for HTML5 video
+  useEffect(() => {
+    if (activeEngine === 'html5' && videoRef.current) {
+      videoRef.current
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+          setHasStartedPlayback(true);
+        })
+        .catch(() => {
+          // In case browser requires muted autoplay
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+            videoRef.current
+              .play()
+              .then(() => {
+                setIsPlaying(true);
+                setHasStartedPlayback(true);
+                setIsMuted(true);
+              })
+              .catch(() => {});
+          }
+        });
+    }
+  }, [activeEngine, videoUrl]);
 
   // 2. Load YouTube Iframe API Dynamically for chromeless streaming
   useEffect(() => {
@@ -230,7 +262,7 @@ export default function AdvancedCinematicPlayer({
       ytPlayerRef.current = new window.YT.Player(ytContainerRef.current, {
         videoId: effectiveYoutubeId,
         playerVars: {
-          autoplay: 0,
+          autoplay: 1,
           controls: 0,
           disablekb: 1,
           enablejsapi: 1,
@@ -247,9 +279,16 @@ export default function AdvancedCinematicPlayer({
             const playerDuration = event.target.getDuration?.();
             if (playerDuration) setDuration(playerDuration);
             if (initialProgress > 0) event.target.seekTo?.(initialProgress, true);
+            // Autoplay immediately on player ready
+            event.target.playVideo?.();
+            setIsPlaying(true);
+            setHasStartedPlayback(true);
           },
           onStateChange: (event) => {
-            if (event.data === 1) setIsPlaying(true);
+            if (event.data === 1) {
+              setIsPlaying(true);
+              setHasStartedPlayback(true);
+            }
             if (event.data === 2) setIsPlaying(false);
             if (event.data === 0) {
               setIsPlaying(false);
@@ -322,6 +361,7 @@ export default function AdvancedCinematicPlayer({
   // Playback Control Methods
   const togglePlay = useCallback(() => {
     if (isScreenLocked) return;
+    setHasStartedPlayback(true);
     if (activeEngine === 'html5' && videoRef.current) {
       if (videoRef.current.paused) {
         void videoRef.current.play();
@@ -370,14 +410,14 @@ export default function AdvancedCinematicPlayer({
   };
 
   const handleVolumeChange = (newVol: number) => {
-    const clamped = Math.max(0, Math.min(1.5, newVol));
+    const clamped = Math.max(0, Math.min(1.0, newVol));
     setVolume(clamped);
     setIsMuted(clamped === 0);
     if (activeEngine === 'html5' && videoRef.current) {
-      videoRef.current.volume = Math.min(1, clamped);
+      videoRef.current.volume = clamped;
       videoRef.current.muted = clamped === 0;
     } else if (activeEngine === 'youtube' && ytPlayerRef.current) {
-      ytPlayerRef.current.setVolume?.(Math.round(Math.min(1, clamped) * 100));
+      ytPlayerRef.current.setVolume?.(Math.round(clamped * 100));
       if (clamped === 0) ytPlayerRef.current.mute?.();
       else ytPlayerRef.current.unMute?.();
     }
@@ -664,8 +704,18 @@ export default function AdvancedCinematicPlayer({
             <div className="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center pointer-events-none select-none">
               <div
                 ref={ytContainerRef}
-                className="w-[115%] h-[115%] min-w-[115%] min-h-[115%] pointer-events-none transform origin-center shrink-0 [&>iframe]:!w-full [&>iframe]:!h-full [&>iframe]:!border-0"
+                className="w-[132%] h-[132%] min-w-[132%] min-h-[132%] pointer-events-none transform origin-center shrink-0 [&>iframe]:!w-full [&>iframe]:!h-full [&>iframe]:!border-0"
               />
+              {/* Custom Pristine Movie Backdrop Cover (Masks native YouTube red play button completely until started) */}
+              {!hasStartedPlayback && (poster || backdropUrl) && (
+                <div
+                  className="absolute inset-0 z-10 bg-cover bg-center cursor-pointer transition-opacity duration-300 pointer-events-auto"
+                  style={{ backgroundImage: `url(${backdropUrl || poster})` }}
+                  onClick={togglePlay}
+                >
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
+                </div>
+              )}
               {/* Click / Tap Interceptor */}
               <div
                 className="absolute inset-0 z-10 cursor-pointer pointer-events-auto"
@@ -681,11 +731,13 @@ export default function AdvancedCinematicPlayer({
             controlsVisible ? 'opacity-0 sm:opacity-80' : 'opacity-80'
           }`}
         >
-          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/40">
-            <span className="font-black text-[10px] sm:text-xs">O</span>
-          </div>
+          <img
+            src="/android-chrome-192x192.png"
+            alt="OrangeFlix"
+            className="w-5 h-5 sm:w-6 sm:h-6 object-contain drop-shadow-[0_2px_8px_rgba(249,115,22,0.4)]"
+          />
           <span className="text-[10px] sm:text-[11px] font-black tracking-widest text-white drop-shadow-md">
-            ORANGE<span className="text-orange-500">FLIX</span>
+            ORANGE<span className="text-orange-400">FLIX</span>
           </span>
           <span className="bg-orange-500/20 text-orange-300 border border-orange-500/30 text-[8px] sm:text-[9px] px-1 py-0.2 rounded font-mono font-bold">
             4K HDR
@@ -878,31 +930,34 @@ export default function AdvancedCinematicPlayer({
               </button>
 
               {/* Clear Sound Button & Audio Level Slider */}
-              <div className="flex items-center gap-1 bg-white/[.06] border border-white/10 px-1.5 py-0.5 rounded-lg shrink-0">
+              <div className="flex items-center gap-1.5 bg-white/[.08] border border-white/10 px-2 py-1 rounded-xl shrink-0">
                 <button
                   onClick={toggleMute}
-                  className="text-slate-300 hover:text-white flex items-center gap-1"
+                  className="text-slate-300 hover:text-white flex items-center gap-1 transition"
                   title="Clear Sound / Mute (M)"
                 >
                   {isMuted || volume === 0 ? (
                     <VolumeX className="w-3.5 h-3.5 text-red-400" />
-                  ) : volume > 0.6 ? (
+                  ) : volume > 0.5 ? (
                     <Volume2 className="w-3.5 h-3.5 text-orange-400" />
                   ) : (
                     <Volume1 className="w-3.5 h-3.5 text-orange-300" />
                   )}
-                  <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-200">
+                  <span className="text-[10px] font-mono font-bold text-slate-200">
                     {isMuted ? '0%' : `${Math.round(volume * 100)}%`}
                   </span>
                 </button>
                 <input
                   type="range"
                   min={0}
-                  max={1.5}
-                  step={0.05}
+                  max={1}
+                  step={0.01}
                   value={isMuted ? 0 : volume}
                   onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  className="hidden md:inline-block w-12 sm:w-16 h-1 appearance-none bg-white/20 rounded-full cursor-pointer accent-orange-500"
+                  style={{
+                    background: `linear-gradient(to right, #f97316 0%, #f97316 ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) 100%)`,
+                  }}
+                  className="w-12 sm:w-20 h-1.5 appearance-none rounded-full cursor-pointer accent-orange-500"
                   aria-label="Volume Slider"
                 />
               </div>
@@ -985,70 +1040,274 @@ export default function AdvancedCinematicPlayer({
                 )}
               </Button>
 
-              {/* Settings Dropdown: Speed, Quality, Sleep Timer, Aspect Ratio, Pop-Up */}
-              <DropdownMenu>
+              {/* Settings Dropdown: Nested Submenus (Quality, Speed, Aspect, Timer, Pop-Up, Glow) */}
+              <DropdownMenu
+                open={settingsOpen}
+                onOpenChange={(open) => {
+                  setSettingsOpen(open);
+                  if (!open) setSettingsTab('main');
+                }}
+              >
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white"
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
+                      settingsOpen
+                        ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/40'
+                        : 'hover:bg-white/10 text-slate-300 hover:text-white'
+                    }`}
                     title="Cinema Settings"
                   >
                     <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="bg-gray-900/95 border-gray-800 text-white w-52 backdrop-blur-xl">
-                  <DropdownMenuItem onClick={toggleSystemPiP} className="text-xs cursor-pointer flex items-center gap-2">
-                    <PictureInPicture className="w-3.5 h-3.5 text-orange-400" />
-                    <span>Pop-Up Mini Player</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setAmbientGlow(!ambientGlow)} className="text-xs cursor-pointer flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5 text-orange-400" />
-                    <span>Ambient Glow: {ambientGlow ? 'On' : 'Off'}</span>
-                  </DropdownMenuItem>
+                <DropdownMenuContent
+                  align="end"
+                  className="bg-gray-950/95 border-gray-800 text-white w-64 p-2 backdrop-blur-xl shadow-2xl rounded-2xl animate-in fade-in-50 zoom-in-95 max-h-[340px] overflow-y-auto"
+                >
+                  {settingsTab === 'main' && (
+                    <div className="space-y-1">
+                      <div className="px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-orange-400 flex items-center justify-between">
+                        <span>Cinema Settings</span>
+                        <Badge variant="outline" className="text-[9px] border-orange-500/30 text-orange-400 py-0">
+                          Pro
+                        </Badge>
+                      </div>
 
-                  <DropdownMenuSeparator className="bg-gray-800" />
-                  <DropdownMenuLabel className="text-xs text-orange-400">Playback Speed</DropdownMenuLabel>
-                  {[0.5, 0.75, 1, 1.25, 1.5, 2].map((spd) => (
-                    <DropdownMenuItem
-                      key={spd}
-                      onClick={() => changeSpeed(spd)}
-                      className={`text-xs cursor-pointer ${playbackSpeed === spd ? 'font-bold text-orange-400' : ''}`}
-                    >
-                      {spd === 1 ? 'Normal (1.0x)' : `${spd}x`}
-                    </DropdownMenuItem>
-                  ))}
+                      {/* Quality */}
+                      <button
+                        onClick={() => setSettingsTab('quality')}
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs hover:bg-white/10 transition text-left text-slate-200 hover:text-white"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Zap className="w-3.5 h-3.5 text-orange-400" />
+                          <span>Quality</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                          <span>{quality}</span>
+                          <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                      </button>
 
-                  <DropdownMenuSeparator className="bg-gray-800" />
-                  <DropdownMenuLabel className="text-xs text-orange-400">Aspect Ratio Fit</DropdownMenuLabel>
-                  {[
-                    { id: 'contain', label: '16:9 Fit (Standard)' },
-                    { id: 'cover', label: 'Crop to Fill (Ultra-wide)' },
-                    { id: 'fill', label: 'Stretch to Screen' },
-                  ].map((aspect) => (
-                    <DropdownMenuItem
-                      key={aspect.id}
-                      onClick={() => setAspectRatioMode(aspect.id as 'contain' | 'cover' | 'fill')}
-                      className={`text-xs cursor-pointer ${aspectRatioMode === aspect.id ? 'font-bold text-orange-400' : ''}`}
-                    >
-                      {aspect.label}
-                    </DropdownMenuItem>
-                  ))}
+                      {/* Speed */}
+                      <button
+                        onClick={() => setSettingsTab('speed')}
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs hover:bg-white/10 transition text-left text-slate-200 hover:text-white"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-3.5 h-3.5 text-orange-400" />
+                          <span>Playback Speed</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                          <span>{playbackSpeed === 1 ? 'Normal (1.0x)' : `${playbackSpeed}x`}</span>
+                          <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                      </button>
 
-                  <DropdownMenuSeparator className="bg-gray-800" />
-                  <DropdownMenuLabel className="text-xs text-orange-400">Sleep Timer</DropdownMenuLabel>
-                  {[
-                    { mins: null, label: 'Off' },
-                    { mins: 15, label: '15 Minutes' },
-                    { mins: 30, label: '30 Minutes' },
-                    { mins: 60, label: '60 Minutes' },
-                  ].map((timer) => (
-                    <DropdownMenuItem
-                      key={String(timer.mins)}
-                      onClick={() => setSleepTimerMinutes(timer.mins)}
-                      className={`text-xs cursor-pointer ${sleepTimerMinutes === timer.mins ? 'font-bold text-orange-400' : ''}`}
-                    >
-                      {timer.label}
-                    </DropdownMenuItem>
-                  ))}
+                      {/* Aspect Ratio */}
+                      <button
+                        onClick={() => setSettingsTab('aspect')}
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs hover:bg-white/10 transition text-left text-slate-200 hover:text-white"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Ratio className="w-3.5 h-3.5 text-orange-400" />
+                          <span>Aspect Ratio Fit</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                          <span>
+                            {aspectRatioMode === 'contain'
+                              ? '16:9 Fit'
+                              : aspectRatioMode === 'cover'
+                              ? 'Crop Fill'
+                              : 'Stretch'}
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                      </button>
+
+                      {/* Sleep Timer */}
+                      <button
+                        onClick={() => setSettingsTab('timer')}
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs hover:bg-white/10 transition text-left text-slate-200 hover:text-white"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-orange-400" />
+                          <span>Sleep Timer</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                          <span>{sleepTimerMinutes ? `${sleepTimerMinutes}m` : 'Off'}</span>
+                          <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                      </button>
+
+                      <div className="my-1.5 h-px bg-gray-800" />
+
+                      {/* Pop-Up Mini Player */}
+                      <button
+                        onClick={() => {
+                          setSettingsOpen(false);
+                          void toggleSystemPiP();
+                        }}
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs hover:bg-white/10 transition text-left text-slate-200 hover:text-white"
+                      >
+                        <div className="flex items-center gap-2">
+                          <PictureInPicture className="w-3.5 h-3.5 text-orange-400" />
+                          <span>Pop-Up Mini Player</span>
+                        </div>
+                      </button>
+
+                      {/* Ambient Glow Toggle */}
+                      <button
+                        onClick={() => setAmbientGlow(!ambientGlow)}
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs hover:bg-white/10 transition text-left text-slate-200 hover:text-white"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-3.5 h-3.5 text-orange-400" />
+                          <span>Ambient Backglow</span>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                            ambientGlow ? 'bg-orange-500/20 text-orange-300' : 'bg-white/10 text-slate-400'
+                          }`}
+                        >
+                          {ambientGlow ? 'On' : 'Off'}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Submenu: Quality */}
+                  {settingsTab === 'quality' && (
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => setSettingsTab('main')}
+                        className="flex items-center gap-1.5 px-1 py-1 text-xs font-bold text-orange-400 hover:text-orange-300 w-full mb-1 border-b border-gray-800"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Back to Settings
+                      </button>
+                      {[
+                        { id: 'Auto (1080p)', label: 'Auto (Recommended 1080p)', badge: 'HDR' },
+                        { id: '4K UHD (2160p)', label: '4K Ultra HD (2160p)', badge: '4K' },
+                        { id: '1080p (Full HD)', label: '1080p Full HD', badge: 'FHD' },
+                        { id: '720p (HD)', label: '720p HD', badge: 'HD' },
+                        { id: '480p (SD)', label: '480p Standard', badge: 'SD' },
+                        { id: '360p (Saver)', label: '360p Data Saver', badge: 'Save' },
+                      ].map((q) => (
+                        <button
+                          key={q.id}
+                          onClick={() => {
+                            setQuality(q.id);
+                            setSettingsTab('main');
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition ${
+                            quality === q.id
+                              ? 'bg-orange-500/20 text-orange-400 font-bold'
+                              : 'hover:bg-white/10 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <span>{q.label}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded border border-white/10 bg-white/5 font-mono text-slate-400">
+                            {q.badge}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Submenu: Speed */}
+                  {settingsTab === 'speed' && (
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => setSettingsTab('main')}
+                        className="flex items-center gap-1.5 px-1 py-1 text-xs font-bold text-orange-400 hover:text-orange-300 w-full mb-1 border-b border-gray-800"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Playback Speed
+                      </button>
+                      {[0.5, 0.75, 1, 1.25, 1.5, 2].map((spd) => (
+                        <button
+                          key={spd}
+                          onClick={() => {
+                            changeSpeed(spd);
+                            setSettingsTab('main');
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition ${
+                            playbackSpeed === spd
+                              ? 'bg-orange-500/20 text-orange-400 font-bold'
+                              : 'hover:bg-white/10 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <span>{spd === 1 ? 'Normal (1.0x)' : `${spd}x`}</span>
+                          {playbackSpeed === spd && <Check className="w-3.5 h-3.5 text-orange-400" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Submenu: Aspect Ratio */}
+                  {settingsTab === 'aspect' && (
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => setSettingsTab('main')}
+                        className="flex items-center gap-1.5 px-1 py-1 text-xs font-bold text-orange-400 hover:text-orange-300 w-full mb-1 border-b border-gray-800"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Aspect Ratio Fit
+                      </button>
+                      {[
+                        { id: 'contain', label: '16:9 Fit (Standard)' },
+                        { id: 'cover', label: 'Crop to Fill (Ultra-wide)' },
+                        { id: 'fill', label: 'Stretch to Screen' },
+                      ].map((aspect) => (
+                        <button
+                          key={aspect.id}
+                          onClick={() => {
+                            setAspectRatioMode(aspect.id as 'contain' | 'cover' | 'fill');
+                            setSettingsTab('main');
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition ${
+                            aspectRatioMode === aspect.id
+                              ? 'bg-orange-500/20 text-orange-400 font-bold'
+                              : 'hover:bg-white/10 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <span>{aspect.label}</span>
+                          {aspectRatioMode === aspect.id && <Check className="w-3.5 h-3.5 text-orange-400" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Submenu: Sleep Timer */}
+                  {settingsTab === 'timer' && (
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => setSettingsTab('main')}
+                        className="flex items-center gap-1.5 px-1 py-1 text-xs font-bold text-orange-400 hover:text-orange-300 w-full mb-1 border-b border-gray-800"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Sleep Timer
+                      </button>
+                      {[
+                        { mins: null, label: 'Off' },
+                        { mins: 15, label: '15 Minutes' },
+                        { mins: 30, label: '30 Minutes' },
+                        { mins: 60, label: '60 Minutes' },
+                      ].map((timer) => (
+                        <button
+                          key={String(timer.mins)}
+                          onClick={() => {
+                            setSleepTimerMinutes(timer.mins);
+                            setSettingsTab('main');
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition ${
+                            sleepTimerMinutes === timer.mins
+                              ? 'bg-orange-500/20 text-orange-400 font-bold'
+                              : 'hover:bg-white/10 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <span>{timer.label}</span>
+                          {sleepTimerMinutes === timer.mins && <Check className="w-3.5 h-3.5 text-orange-400" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
 

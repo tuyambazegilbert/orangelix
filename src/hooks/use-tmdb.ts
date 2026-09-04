@@ -20,7 +20,12 @@ import {
   TMDBCreditsResponse,
   TMDBVideosResponse,
   TMDBSeasonDetailResponse,
+  TMDBReview,
+  TMDBReviewsResponse,
+  TMDBWatchProvidersResponse,
+  TMDBCountryWatchProviders,
 } from '@/types/tmdb';
+import { GeolocationService } from '@/services/geolocation';
 import { MediaItem, MediaDetail, MediaEpisode, MediaType } from '@/types/media';
 
 export const tmdbQueryKeys = {
@@ -434,6 +439,33 @@ export function useSeasonDetails(seriesId: number | null | undefined, seasonNumb
   });
 }
 
+// Media Reviews (Movies and TV Shows)
+export function useMediaReviews(mediaType: 'movie' | 'tv', id: number | null | undefined) {
+  return useQuery({
+    queryKey: ['tmdb', mediaType, 'reviews', id || 0],
+    queryFn: async (): Promise<TMDBReview[]> => {
+      if (!id || id <= 0) return [];
+      try {
+        const endpoint = mediaType === 'tv' ? tmdbEndpoints.seriesReviews(id) : tmdbEndpoints.movieReviews(id);
+        const res = await tmdbClient.get<TMDBReviewsResponse>(endpoint);
+        return res?.results || [];
+      } catch {
+        return [];
+      }
+    },
+    enabled: Boolean(id && id > 0),
+    staleTime: DEFAULT_STALE_TIME,
+  });
+}
+
+export function useMovieReviews(movieId: number | null | undefined) {
+  return useMediaReviews('movie', movieId);
+}
+
+export function useSeriesReviews(seriesId: number | null | undefined) {
+  return useMediaReviews('tv', seriesId);
+}
+
 // Single Item Hydration (for Favorites / WatchLater)
 export function useHydratedItem(mediaType: MediaType, tmdbId: number) {
   return useQuery({
@@ -526,4 +558,62 @@ export function usePersonDetails(personId: number | null | undefined) {
     staleTime: DEFAULT_STALE_TIME,
   });
 }
+
+export interface WatchProvidersResult {
+  countryCode: string;
+  allCountries: string[];
+  providers: TMDBCountryWatchProviders | null;
+  rawResults: Record<string, TMDBCountryWatchProviders>;
+}
+
+export function useWatchProviders(mediaType: 'movie' | 'tv', id: number | null | undefined, customCountry?: string) {
+  return useQuery({
+    queryKey: ['tmdb', mediaType, 'watch-providers', id || 0, customCountry || 'auto'],
+    queryFn: async (): Promise<WatchProvidersResult | null> => {
+      if (!id || id <= 0) return null;
+      try {
+        const endpoint = mediaType === 'tv' ? tmdbEndpoints.seriesWatchProviders(id) : tmdbEndpoints.movieWatchProviders(id);
+        const res = await tmdbClient.get<TMDBWatchProvidersResponse>(endpoint);
+        if (!res?.results) return null;
+
+        const availableCountries = Object.keys(res.results);
+        if (availableCountries.length === 0) return null;
+
+        let targetCountry = customCountry?.toUpperCase();
+        if (!targetCountry) {
+          const userCountry = GeolocationService.getUserCountry();
+          if (userCountry) {
+            targetCountry = userCountry.toUpperCase();
+          }
+        }
+
+        let countryData: TMDBCountryWatchProviders | null = null;
+        let effectiveCountry = targetCountry || '';
+
+        if (targetCountry && res.results[targetCountry]) {
+          countryData = res.results[targetCountry];
+          effectiveCountry = targetCountry;
+        } else if (res.results['US']) {
+          countryData = res.results['US'];
+          effectiveCountry = 'US';
+        } else {
+          effectiveCountry = availableCountries[0];
+          countryData = res.results[effectiveCountry];
+        }
+
+        return {
+          countryCode: effectiveCountry || 'US',
+          allCountries: availableCountries,
+          providers: countryData,
+          rawResults: res.results,
+        };
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(id && id > 0),
+    staleTime: DEFAULT_STALE_TIME,
+  });
+}
+
 

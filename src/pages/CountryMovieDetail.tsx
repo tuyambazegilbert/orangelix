@@ -12,6 +12,7 @@ import { getCountryConfig, getAllCountries } from '@/features/geo/countryConfig'
 import { getGeoTranslations } from '@/features/geo/translations';
 import { GeolocationService } from '@/services/geolocation';
 import CountryMovieCard from '@/components/geo/CountryMovieCard';
+import GeoContentRail from '@/components/geo/GeoContentRail';
 import SEOHead from '@/components/seo/SEOHead';
 import Breadcrumbs from '@/components/Breadcrumbs';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,6 +44,8 @@ import {
   Globe,
   User,
   Play,
+  TrendingUp,
+  Flame,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -65,7 +68,10 @@ export default function CountryMovieDetail() {
 
   const [movie, setMovie] = useState<GeoContentItem | null>(null);
   const [seriesEpisodes, setSeriesEpisodes] = useState<GeoContentItem[]>([]);
-  const [related, setRelated] = useState<GeoContentItem[]>([]);
+  const [upNext, setUpNext] = useState<GeoContentItem[]>([]);
+  const [selectedForYou, setSelectedForYou] = useState<GeoContentItem[]>([]);
+  const [similarStories, setSimilarStories] = useState<GeoContentItem[]>([]);
+  const [trendingNow, setTrendingNow] = useState<GeoContentItem[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
@@ -127,15 +133,15 @@ export default function CountryMovieDetail() {
           }
         });
 
-        // Load related local movies
-        const rel = await GeoContentService.getMoviesByCountry({
-          countryCode: item.country || item.countryCode || 'RW',
-          status: 'published',
-          limit: 6,
+        // Load contextual recommendations for African Cinema Watch (Deduplicated)
+        void GeoContentService.getAfricanCinemaWatchRecommendations(item, countryCode).then((recs) => {
+          if (isMounted) {
+            setUpNext(recs.upNext);
+            setSelectedForYou(recs.selectedForYou);
+            setSimilarStories(recs.similarStories);
+            setTrendingNow(recs.trendingNow);
+          }
         });
-        if (isMounted) {
-          setRelated(rel.items.filter((m) => m.id !== item.id).slice(0, 4));
-        }
       }
       if (isMounted) {
         setIsLoading(false);
@@ -367,33 +373,37 @@ export default function CountryMovieDetail() {
                 country={country.name}
                 durationMinutes={Math.round((movie.durationSeconds || 0) / 60) || 90}
                 onProgress={(seconds, duration) => {
-                  const mid = `geo-${movie.id || movie.youtubeVideoId}`;
+                  const mid = `geo-${countryCode.toLowerCase()}-${movie.slug || movie.id || movie.youtubeVideoId}`;
                   localStorage.setItem(`orangeflix_progress_${mid}`, String(Math.floor(seconds)));
-                  if (currentUser) {
-                    const genreArray = (movie.tags || []).slice(0, 3);
-                    const primaryGenre = genreArray.length > 0 ? genreArray[0] : 'Regional Cinema';
 
-                    void FirebaseData.setHistory(
-                      currentUser.id,
-                      {
-                        id: movie.id || movie.youtubeVideoId,
-                        tmdbId: 0,
-                        mediaType: 'movie',
-                        title: movie.title,
-                        description: movie.description || `From ${country.name}`,
-                        posterUrl: movie.thumbnail || movie.thumbnailUrl,
-                        backdropUrl: movie.thumbnail || movie.thumbnailUrl,
-                        duration: Math.round((movie.durationSeconds || 0) / 60),
-                        rating: Math.min(5, Number((Number(movie.score || movie.classificationScore || 0) / 20).toFixed(1)) || 4),
-                        voteAverage: Number(movie.score || movie.classificationScore || 85),
-                        voteCount: Number(movie.views || movie.viewCount || 0),
-                        releaseYear: movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : 2026,
-                        genres: [country.name, primaryGenre, 'Cinema'].filter(Boolean),
-                      },
-                      seconds,
-                      duration
-                    );
-                  }
+                  const genreArray = (movie.tags || []).slice(0, 3);
+                  const primaryGenre = genreArray.length > 0 ? genreArray[0] : `${country.name} Cinema`;
+
+                  void FirebaseData.setHistory(
+                    currentUser?.id,
+                    {
+                      id: mid,
+                      tmdbId: 0,
+                      mediaType: 'movie',
+                      title: movie.title,
+                      description: movie.description || `From ${country.name}`,
+                      posterUrl: movie.thumbnail || movie.thumbnailUrl,
+                      backdropUrl: movie.thumbnail || movie.thumbnailUrl,
+                      duration: Math.round((movie.durationSeconds || 0) / 60) || 90,
+                      rating: Math.min(5, Number((Number(movie.score || movie.classificationScore || 0) / 20).toFixed(1)) || 4),
+                      voteAverage: Number(movie.score || movie.classificationScore || 85),
+                      voteCount: Number(movie.views || movie.viewCount || 0),
+                      releaseYear: movie.publishedAt ? new Date(movie.publishedAt).getFullYear() : 2026,
+                      genres: [country.name, primaryGenre, 'African Cinema'].filter(Boolean),
+                      country: country.name,
+                      countryCode: countryCode.toLowerCase(),
+                      slug: movie.slug || movie.id,
+                      youtubeVideoId: movie.youtubeVideoId,
+                      channelTitle: movie.channelTitle,
+                    },
+                    seconds,
+                    duration
+                  );
                 }}
               />
             </div>
@@ -570,7 +580,7 @@ export default function CountryMovieDetail() {
             )}
 
             {/* Up Next & Regional Recommendations Queue */}
-            {related.length > 0 && (
+            {upNext.length > 0 && (
               <div className="rounded-2xl border border-white/[.08] bg-white/[.025] p-3.5 sm:p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -586,30 +596,30 @@ export default function CountryMovieDetail() {
                 </div>
 
                 <div className="space-y-2">
-                  {related.slice(0, 5).map((relItem) => (
+                  {upNext.slice(0, 6).map((nextItem) => (
                     <Link
-                      key={relItem.id}
-                      to={`/${countryCode.toLowerCase()}/movies/${relItem.slug || relItem.id}`}
+                      key={nextItem.id}
+                      to={`/${countryCode.toLowerCase()}/movies/${nextItem.slug || nextItem.id}`}
                       className="flex gap-2.5 p-2 rounded-xl border border-white/[0.05] bg-black/20 hover:border-orange-500/40 hover:bg-white/[0.04] transition group"
                     >
                       <div className="relative w-24 h-14 shrink-0 rounded-lg overflow-hidden bg-slate-900">
                         <img
-                          src={relItem.thumbnail || relItem.thumbnailUrl || `https://img.youtube.com/vi/${relItem.youtubeVideoId}/hqdefault.jpg`}
-                          alt={relItem.title}
+                          src={nextItem.thumbnail || nextItem.thumbnailUrl || `https://img.youtube.com/vi/${nextItem.youtubeVideoId}/hqdefault.jpg`}
+                          alt={nextItem.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                         />
                         <span className="absolute bottom-1 right-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-white">
-                          {relItem.durationFormatted}
+                          {nextItem.durationFormatted}
                         </span>
                       </div>
                       <div className="min-w-0 flex-1">
                         <h4 className="truncate text-xs font-semibold text-white group-hover:text-orange-400 transition-colors">
-                          {relItem.title}
+                          {nextItem.title}
                         </h4>
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1">
-                          <span className="truncate max-w-[110px]">{relItem.channelTitle}</span>
+                          <span className="truncate max-w-[110px]">{nextItem.channelTitle}</span>
                           <span>•</span>
-                          <span>{(relItem.views || relItem.viewCount || 0).toLocaleString()} views</span>
+                          <span>{(nextItem.views || nextItem.viewCount || 0).toLocaleString()} views</span>
                         </div>
                       </div>
                     </Link>
@@ -621,34 +631,41 @@ export default function CountryMovieDetail() {
         </div>
 
         {/* 2. Bottom Section: Full-Width Discoveries & Reviews */}
-        <div className="space-y-10 pt-10 border-t border-white/[0.08] mt-8">
-          {/* More Related Regional Productions Grid (Full Width) */}
-          {related.length > 0 && (
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" /> More from {country.name}
-                  </p>
-                  <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
-                    Related Regional Productions
-                  </h2>
-                </div>
+        <div className="space-y-8 pt-10 border-t border-white/[0.08] mt-8">
+          {/* Rail 1: Selected for you / Because you watched this */}
+          {selectedForYou.length > 0 && (
+            <GeoContentRail
+              title="Because you watched this"
+              eyebrow="Selected for you"
+              icon={<Sparkles className="w-3.5 h-3.5 text-orange-400" />}
+              items={selectedForYou}
+              countryCode={countryCode}
+              href={`/${countryCode.toLowerCase()}/movies`}
+            />
+          )}
 
-                <Link
-                  to={`/${countryCode.toLowerCase()}/movies`}
-                  className="text-xs text-orange-400 hover:text-orange-300 font-semibold"
-                >
-                  View all {country.name} movies →
-                </Link>
-              </div>
+          {/* Rail 2: Similar stories / More like this */}
+          {similarStories.length > 0 && (
+            <GeoContentRail
+              title="More like this"
+              eyebrow="Similar stories"
+              icon={<Flame className="w-3.5 h-3.5 text-rose-500" />}
+              items={similarStories}
+              countryCode={countryCode}
+              href={`/${countryCode.toLowerCase()}/movies`}
+            />
+          )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {related.map((m) => (
-                  <CountryMovieCard key={m.id} movie={m} countryCode={countryCode} />
-                ))}
-              </div>
-            </section>
+          {/* Rail 3: What everyone is watching / Trending now */}
+          {trendingNow.length > 0 && (
+            <GeoContentRail
+              title="Trending now"
+              eyebrow="What everyone is watching"
+              icon={<TrendingUp className="w-3.5 h-3.5 text-emerald-400" />}
+              items={trendingNow}
+              countryCode={countryCode}
+              href={`/${countryCode.toLowerCase()}/movies`}
+            />
           )}
 
           {/* Community Ratings & Reviews (Full Width) */}

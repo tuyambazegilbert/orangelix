@@ -76,22 +76,22 @@ export default function Music() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-[#07090e] text-white">
       <SEOHead
         title="Movie & TV Soundtracks — Cinema Music Discovery"
         description="Stream official motion picture soundtracks, score themes, and composer masterworks on OrangeFlix."
         url="https://orangeflixx.vercel.app/music"
       />
 
-      <div className="page-wrap py-8">
+      <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
         <Breadcrumbs items={[{ name: 'Music & Soundtracks', url: '/music' }]} />
 
         {/* Hero Header */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/[.08] bg-gradient-to-br from-[#12192c] via-[#0b101c] to-[#1e1329] p-6 sm:p-10 mb-10 shadow-2xl">
+        <section className="relative overflow-hidden rounded-3xl border border-white/[.08] bg-gradient-to-br from-[#12192c] via-[#0b101c] to-[#1e1329] p-6 sm:p-10 shadow-2xl">
           <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-violet-600/15 blur-3xl" />
           <div className="pointer-events-none absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-orange-500/10 blur-3xl" />
 
-          <div className="relative max-w-2xl space-y-3">
+          <div className="relative max-w-3xl space-y-3">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/15 border border-violet-500/30 text-violet-300 text-xs font-semibold">
               <Disc3 className="w-3.5 h-3.5 animate-spin text-orange-400" />
               <span>Cinema Soundtracks & Scores</span>
@@ -100,30 +100,52 @@ export default function Music() {
               The Sound of <span className="text-orange-400">Cinema</span>
             </h1>
             <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-              Explore unforgettable orchestral scores and official soundtracks from legendary composers like Hans Zimmer, Ludwig Göransson, and Ennio Morricone.
+              Explore unforgettable orchestral scores and official soundtracks from legendary composers like Hans Zimmer, Ludwig Göransson, Ennio Morricone, and John Williams.
             </p>
 
-            <form onSubmit={handleSearch} className="relative pt-4 flex max-w-md items-center gap-2">
+            <form onSubmit={handleSearch} className="relative pt-3 flex max-w-lg items-center gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <Input
                   type="text"
-                  placeholder="Search soundtrack (e.g. Dune, Interstellar, Batman)..."
+                  placeholder="Search soundtrack (e.g. Dune, Interstellar, Oppenheimer)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 bg-black/40 border-white/10 text-xs text-white placeholder:text-slate-500 rounded-xl h-10"
+                  className="pl-10 bg-black/50 border-white/10 text-xs text-white placeholder:text-slate-500 rounded-xl h-11"
                 />
               </div>
-              <Button type="submit" size="sm" className="bg-orange-500 hover:bg-orange-600 rounded-xl h-10 px-4">
+              <Button type="submit" size="sm" className="bg-orange-500 hover:bg-orange-600 rounded-xl h-11 px-5 font-bold shadow-lg shadow-orange-500/25">
                 Search
               </Button>
             </form>
+
+            {/* Quick Composer / Theme Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <span className="text-xs font-semibold text-slate-400 mr-1">Popular:</span>
+              {['Dune', 'Interstellar', 'Hans Zimmer', 'Ludwig Göransson', 'Oppenheimer', 'The Batman', 'Inception'].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(tag);
+                    setLoading(true);
+                    MusicApi.searchMovieSoundtrack(tag).then((res) => {
+                      setSearchResults(res);
+                      setLoading(false);
+                    });
+                  }}
+                  className="text-xs px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/[0.08] hover:border-orange-500/40 text-slate-300 hover:text-white transition"
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
 
         {/* Search Results if active */}
         {searchQuery.trim() && (
-          <div className="mb-12 space-y-6">
+          <div className="space-y-6">
             <div className="flex items-center justify-between border-b border-white/[.08] pb-3">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <Music2 className="w-5 h-5 text-orange-400" />
@@ -133,27 +155,27 @@ export default function Music() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setSearchQuery('')}
-                className="text-xs text-slate-400"
+                className="text-xs text-slate-400 hover:text-white"
               >
-                Clear
+                Clear Search
               </Button>
             </div>
 
             {searchResults.tracks.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Tracks & Audio Previews</h3>
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {searchResults.tracks.map((track) => (
                     <div
                       key={track.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-gray-900/60 border border-white/[.08] hover:border-orange-500/30 transition group"
+                      className="flex items-center justify-between p-3.5 rounded-2xl bg-gray-900/60 border border-white/[.08] hover:border-orange-500/30 transition group"
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <button
                           onClick={() => togglePlayTrack(track)}
-                          className={`w-10 h-10 rounded-lg grid place-items-center shrink-0 transition ${
+                          className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 transition ${
                             playingTrackId === track.id
-                              ? 'bg-orange-500 text-white'
+                              ? 'bg-orange-500 text-white shadow-md shadow-orange-500/40'
                               : 'bg-white/10 text-slate-300 group-hover:bg-orange-500 group-hover:text-white'
                           }`}
                         >
@@ -171,7 +193,7 @@ export default function Music() {
 
                       {track.previewUrl && (
                         <span className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded font-mono shrink-0">
-                          30s Preview
+                          30s
                         </span>
                       )}
                     </div>
@@ -190,15 +212,15 @@ export default function Music() {
                 <Disc3 className="w-5 h-5 text-orange-400" />
                 Featured Motion Picture Soundtracks
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">Iconic albums available for discovery</p>
+              <p className="text-xs text-slate-400 mt-0.5">Iconic albums available for high-fidelity discovery</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
             {featuredAlbums.map((album) => (
               <Card
                 key={album.id}
-                className="bg-gray-900/60 border-white/[.08] hover:border-orange-500/40 transition-all overflow-hidden flex flex-col justify-between group"
+                className="bg-gray-900/60 border-white/[.08] hover:border-orange-500/40 transition-all overflow-hidden flex flex-col justify-between group rounded-2xl shadow-lg"
               >
                 <div className="relative aspect-square bg-gray-950 overflow-hidden">
                   <img
@@ -213,21 +235,21 @@ export default function Music() {
                         setSearchQuery(album.collectionName);
                         MusicApi.searchMovieSoundtrack(album.collectionName).then(setSearchResults);
                       }}
-                      className="bg-orange-500 hover:bg-orange-600 rounded-full text-xs"
+                      className="bg-orange-500 hover:bg-orange-600 rounded-full text-xs shadow-lg font-bold"
                     >
                       <Play className="w-3.5 h-3.5 mr-1" /> View Tracks
                     </Button>
                   </div>
                 </div>
 
-                <CardContent className="p-3">
+                <CardContent className="p-3.5">
                   <h3 className="text-xs font-bold text-white truncate group-hover:text-orange-400 transition-colors">
                     {album.collectionName}
                   </h3>
                   <p className="text-[11px] text-slate-400 truncate mt-0.5">
                     {album.artistName}
                   </p>
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-2 border-t border-white/[.06]">
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2.5 pt-2 border-t border-white/[.06]">
                     <span>{album.trackCount} Tracks</span>
                     <span>{new Date(album.releaseDate).getFullYear()}</span>
                   </div>

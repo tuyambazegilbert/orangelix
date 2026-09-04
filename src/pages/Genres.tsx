@@ -10,6 +10,7 @@ import Breadcrumbs from '@/components/Breadcrumbs';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { HeroSkeleton, MovieGridSkeleton } from '@/components/ui/Skeletons';
+import { filterOutHeroItems, deduplicateList } from '@/lib/deduplication';
 import {
   Film,
   Sparkles,
@@ -157,9 +158,10 @@ export default function Genres() {
     page,
   });
 
-  const items = discoverData?.items || [];
+  const items = useMemo(() => deduplicateList(discoverData?.items || []), [discoverData?.items]);
   const totalPages = Math.min(discoverData?.totalPages || 1, 500);
-  const featuredItems = items.slice(0, 6);
+  const featuredItems = useMemo(() => items.slice(0, 6), [items]);
+  const gridItems = useMemo(() => (page === 1 ? filterOutHeroItems(featuredItems, items) : items), [page, featuredItems, items]);
 
   return (
     <div className="min-h-screen bg-[#080d17] text-white overflow-x-hidden">
@@ -176,7 +178,7 @@ export default function Genres() {
         <StageSlider items={featuredItems} />
       ) : null}
 
-      <main className="page-wrap py-6 space-y-6">
+      <main className="page-wrap py-3 sm:py-4 space-y-4">
         <Breadcrumbs
           items={[
             { name: 'Home', url: '/' },
@@ -185,84 +187,81 @@ export default function Genres() {
           ]}
         />
 
-        {/* Hero Banner Header */}
-        <section className="relative overflow-hidden rounded-3xl border border-white/[.08] bg-gradient-to-br from-[#101726] via-[#090d18] to-[#1a1024] p-6 sm:p-8 shadow-2xl">
-          <div className="max-w-3xl space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-semibold">
-              <span className="text-sm">{genreInfo.emoji}</span>
-              <span>Curated Genre Hub</span>
+        {/* Ultra-Compact Pro Genre Command Hub */}
+        <section className="rounded-xl border border-white/[.08] bg-gradient-to-r from-[#0d1322]/95 via-[#111827]/90 to-[#0d1322]/95 p-2 sm:p-2.5 backdrop-blur-md shadow-[0_8px_24px_rgba(0,0,0,0.25)] space-y-2">
+          {/* Top Row: Title, Subtitle, and Inline Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500/15 border border-orange-500/30 text-sm shrink-0">
+                {genreInfo.emoji}
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-sm sm:text-base font-black text-white tracking-tight">
+                    {genreInfo.name} <span className="text-orange-400">Cinema</span>
+                  </h1>
+                  <span className="hidden md:inline-flex items-center px-1.5 py-0.5 rounded bg-white/[.06] text-[10px] font-medium text-slate-300 truncate max-w-md">
+                    {genreInfo.description}
+                  </span>
+                </div>
+              </div>
             </div>
-            <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-              {genreInfo.name} <span className="text-orange-400">Cinema</span>
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              {genreInfo.description}
-            </p>
-          </div>
-        </section>
 
-        {/* Genre Quick Navigation Chips */}
-        <div className="space-y-2">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1">
-            <Grid className="w-3 h-3" /> Select Genre Category
-          </p>
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+            {/* Sort & Pagination Indicators */}
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <div className="flex items-center gap-1">
+                <SlidersHorizontal className="w-3 h-3 text-orange-400" />
+                <Select
+                  value={sortBy}
+                  onValueChange={(val) => {
+                    setSortBy(val);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-[130px] sm:w-[150px] bg-slate-950/80 border-white/10 text-xs text-white rounded-lg h-7">
+                    <SelectValue placeholder="Sort order" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                    <SelectItem value="popularity.desc">Most Popular</SelectItem>
+                    <SelectItem value="vote_average.desc">Highest Rated</SelectItem>
+                    <SelectItem value="primary_release_date.desc">Newest Releases</SelectItem>
+                    <SelectItem value="revenue.desc">Top Box Office</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <span className="text-[10px] text-slate-400 font-mono px-1.5 py-0.5 rounded bg-white/[.04] border border-white/[.06]">
+                <span className="text-orange-400 font-bold">{page}</span>/{totalPages}
+              </span>
+            </div>
+          </div>
+
+          {/* Bottom Row: Genre Pills Horizontal Ribbon */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none pt-1 border-t border-white/[.06]">
             {Object.entries(GENRE_SLUG_MAP).map(([key, info]) => {
               const isActive = (slug ? normalizedSlug : 'all') === key;
               return (
-                <Button
+                <Link
                   key={key}
-                  asChild
-                  variant={isActive ? 'default' : 'outline'}
-                  size="sm"
-                  className={
+                  to={key === 'all' ? '/genres' : `/genres/${key}`}
+                  className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] shrink-0 transition-all duration-150 border ${
                     isActive
-                      ? 'bg-orange-500 hover:bg-orange-600 text-white rounded-full text-xs font-bold shrink-0 shadow-md shadow-orange-500/20'
-                      : 'bg-gray-900/60 border-gray-800 text-slate-300 rounded-full text-xs hover:border-orange-500/40 hover:text-white shrink-0'
-                  }
+                      ? 'bg-orange-500 border-orange-400 text-white font-bold shadow-sm'
+                      : 'bg-white/[.04] border-white/10 text-slate-300 hover:text-white hover:border-orange-500/40 hover:bg-white/[.08]'
+                  }`}
                 >
-                  <Link to={key === 'all' ? '/genres' : `/genres/${key}`}>
-                    <span className="mr-1">{info.emoji}</span> {info.name}
-                  </Link>
-                </Button>
+                  <span className="text-xs">{info.emoji}</span>
+                  <span>{info.name}</span>
+                </Link>
               );
             })}
           </div>
-        </div>
-
-        {/* Controls Bar */}
-        <div className="flex items-center justify-between flex-wrap gap-4 p-4 rounded-2xl bg-gray-900/50 border border-gray-800/80">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4 text-orange-400" />
-            <span className="text-xs font-semibold text-slate-300">Sort by</span>
-            <Select
-              value={sortBy}
-              onValueChange={(val) => {
-                setSortBy(val);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[180px] bg-gray-950 border-gray-800 text-xs text-white rounded-xl h-9">
-                <SelectValue placeholder="Sort order" />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                <SelectItem value="popularity.desc">Most Popular</SelectItem>
-                <SelectItem value="vote_average.desc">Highest Rated</SelectItem>
-                <SelectItem value="primary_release_date.desc">Newest Releases</SelectItem>
-                <SelectItem value="revenue.desc">Top Box Office</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <span className="text-xs text-slate-400 font-mono">
-            Page <span className="text-orange-400 font-bold">{page}</span> of {totalPages}
-          </span>
-        </div>
+        </section>
 
         {/* Media Grid */}
         {isLoading ? (
           <MovieGridSkeleton count={18} />
-        ) : items.length === 0 ? (
+        ) : gridItems.length === 0 ? (
           <div className="text-center py-20 bg-gray-900/30 rounded-3xl border border-gray-800/60 p-8 space-y-3">
             <Film className="w-12 h-12 text-gray-600 mx-auto" />
             <h3 className="text-xl font-bold text-white">No Movies Found in {genreInfo.name}</h3>
@@ -271,7 +270,7 @@ export default function Genres() {
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {items.map((media) => (
+              {gridItems.map((media) => (
                 <MovieCard key={media.id} movie={media} />
               ))}
             </div>

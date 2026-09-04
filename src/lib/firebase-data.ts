@@ -601,13 +601,25 @@ export const FirebaseData = {
   // -------------------------------------------------------------
   // USER WATCH HISTORY & CONTINUITY
   // -------------------------------------------------------------
-  async getWatchHistory(userId: string): Promise<WatchHistoryItem[]> {
-    if (!firestore) return [];
+  async getWatchHistory(userId?: string): Promise<WatchHistoryItem[]> {
+    const getLocalWatchHistory = (): WatchHistoryItem[] => {
+      try {
+        const raw = localStorage.getItem('orangeflix_watch_history_cache');
+        return raw ? (JSON.parse(raw) as WatchHistoryItem[]) : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const localItems = getLocalWatchHistory();
+    if (!firestore || !userId) {
+      return localItems;
+    }
     try {
       const col = collection(firestore, 'watchHistory', userId, 'items');
       const q = query(col, orderBy('watchedAt', 'desc'), limit(50));
       const snap = await getDocs(q);
-      return snap.docs.map((d) => {
+      const fsItems = snap.docs.map((d) => {
         const data = d.data();
         return {
           contentId: d.id,
@@ -619,16 +631,50 @@ export const FirebaseData = {
           durationSeconds: data.durationSeconds || 7200,
           genre: data.genre || [],
           watchedAt: data.watchedAt?.toDate ? data.watchedAt.toDate().toISOString() : data.watchedAt || new Date().toISOString(),
-        };
+          country: data.country,
+          countryCode: data.countryCode,
+          slug: data.slug,
+          youtubeVideoId: data.youtubeVideoId,
+          channelTitle: data.channelTitle,
+        } as WatchHistoryItem;
       });
+
+      const seen = new Set<string>();
+      const merged: WatchHistoryItem[] = [];
+      for (const item of fsItems) {
+        if (!seen.has(item.contentId)) {
+          seen.add(item.contentId);
+          merged.push(item);
+        }
+      }
+      for (const item of localItems) {
+        if (!seen.has(item.contentId)) {
+          seen.add(item.contentId);
+          merged.push(item);
+        }
+      }
+      return merged;
     } catch (err) {
-      console.warn('Firestore getWatchHistory error:', err);
-      return [];
+      console.warn('Firestore getWatchHistory error, falling back to local history:', err);
+      return localItems;
     }
   },
 
   async saveWatchProgress(userId: string, item: Omit<WatchHistoryItem, 'watchedAt'> & { watchedAt?: string }) {
-    if (!firestore) return;
+    try {
+      const existing = localStorage.getItem('orangeflix_watch_history_cache');
+      const list: WatchHistoryItem[] = existing ? JSON.parse(existing) : [];
+      const updated = list.filter((h) => h.contentId !== item.contentId);
+      updated.unshift({
+        ...item,
+        watchedAt: item.watchedAt || new Date().toISOString(),
+      });
+      localStorage.setItem('orangeflix_watch_history_cache', JSON.stringify(updated.slice(0, 100)));
+    } catch {
+      // ignore
+    }
+
+    if (!firestore || !userId) return;
     try {
       await setDoc(
         doc(firestore, 'watchHistory', userId, 'items', item.contentId),
@@ -642,36 +688,98 @@ export const FirebaseData = {
     }
   },
 
-  async setHistory(userId: string, media: StoredContent | { id?: string; title?: string; genres?: string[]; posterUrl?: string; imageUrl?: string; mediaType?: string; tmdbId?: number }, seconds: number, total: number) {
-    if (!firestore) return;
-    try {
-      const id = 'id' in media && media.id ? media.id : contentId(media as StoredContent);
-      const title = 'title' in media ? media.title || 'Untitled' : 'Untitled';
-      const posterUrl = 'posterUrl' in media ? media.posterUrl : ('imageUrl' in media ? media.imageUrl : undefined);
-      const mediaType = ('mediaType' in media && media.mediaType === 'tv') ? 'tv' : 'movie';
-      const genre = 'genres' in media && Array.isArray(media.genres) ? media.genres : ('genre' in media && Array.isArray(media.genre) ? media.genre : ['Action']);
+  async setHistory(
+    userId: string | undefined,
+    media:
+      | StoredContent
+      | {
+          id?: string;
+          title?: string;
+          genres?: string[];
+          posterUrl?: string;
+          imageUrl?: string;
+          mediaType?: string;
+          tmdbId?: number;
+          country?: string;
+          countryCode?: string;
+          slug?: string;
+          youtubeVideoId?: string;
+          channelTitle?: string;
+        },
+    seconds: number,
+    total: number
+  ) {
+    const id = 'id' in media && media.id ? media.id : contentId(media as StoredContent);
+    const title = 'title' in media ? media.title || 'Untitled' : 'Untitled';
+    const posterUrl = 'posterUrl' in media ? media.posterUrl : ('imageUrl' in media ? media.imageUrl : undefined);
+    const mediaType = 'mediaType' in media && media.mediaType === 'tv' ? 'tv' : 'movie';
+    const genre =
+      'genres' in media && Array.isArray(media.genres)
+        ? media.genres
+        : 'genre' in media && Array.isArray(media.genre)
+        ? media.genre
+        : ['Action'];
+    const country = 'country' in media ? media.country : undefined;
+    const countryCode = 'countryCode' in media ? media.countryCode : undefined;
+    const slug = 'slug' in media ? media.slug : undefined;
+    const youtubeVideoId = 'youtubeVideoId' in media ? media.youtubeVideoId : undefined;
+    const channelTitle = 'channelTitle' in media ? media.channelTitle : undefined;
 
-      await setDoc(
-        doc(firestore, 'watchHistory', userId, 'items', id),
-        cleanFirestoreData({
-          contentId: id,
-          tmdbId: 'tmdbId' in media ? media.tmdbId : undefined,
-          mediaType,
-          title,
-          posterUrl,
-          progressSeconds: Math.floor(seconds),
-          durationSeconds: Math.floor(total) || 7200,
-          genre,
-          watchedAt: serverTimestamp(),
-        })
-      );
-    } catch (err) {
-      console.warn('Firestore setHistory error:', err);
+    const historyItem: WatchHistoryItem = {
+      contentId: id,
+      tmdbId: 'tmdbId' in media ? media.tmdbId : undefined,
+      mediaType,
+      title,
+      posterUrl,
+      progressSeconds: Math.floor(seconds),
+      durationSeconds: Math.floor(total) || 7200,
+      genre,
+      watchedAt: new Date().toISOString(),
+      country,
+      countryCode,
+      slug,
+      youtubeVideoId,
+      channelTitle,
+    };
+
+    try {
+      const existing = localStorage.getItem('orangeflix_watch_history_cache');
+      const list: WatchHistoryItem[] = existing ? JSON.parse(existing) : [];
+      const updated = list.filter((h) => h.contentId !== id);
+      updated.unshift(historyItem);
+      localStorage.setItem('orangeflix_watch_history_cache', JSON.stringify(updated.slice(0, 100)));
+    } catch {
+      // ignore
+    }
+
+    if (firestore && userId) {
+      try {
+        await setDoc(
+          doc(firestore, 'watchHistory', userId, 'items', id),
+          cleanFirestoreData({
+            ...historyItem,
+            watchedAt: serverTimestamp(),
+          })
+        );
+      } catch (err) {
+        console.warn('Firestore setHistory error:', err);
+      }
     }
   },
 
-  async removeWatchHistory(userId: string, contentId: string) {
-    if (!firestore) return;
+  async removeWatchHistory(userId: string | undefined, contentId: string) {
+    try {
+      const existing = localStorage.getItem('orangeflix_watch_history_cache');
+      if (existing) {
+        const list: WatchHistoryItem[] = JSON.parse(existing);
+        const updated = list.filter((h) => h.contentId !== contentId);
+        localStorage.setItem('orangeflix_watch_history_cache', JSON.stringify(updated));
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!firestore || !userId) return;
     try {
       await deleteDoc(doc(firestore, 'watchHistory', userId, 'items', contentId));
     } catch (err) {
@@ -679,8 +787,14 @@ export const FirebaseData = {
     }
   },
 
-  async clearWatchHistory(userId: string) {
-    if (!firestore) return;
+  async clearWatchHistory(userId?: string) {
+    try {
+      localStorage.removeItem('orangeflix_watch_history_cache');
+    } catch {
+      // ignore
+    }
+
+    if (!firestore || !userId) return;
     try {
       const snap = await getDocs(collection(firestore, 'watchHistory', userId, 'items'));
       const deletes = snap.docs.map((d) => deleteDoc(d.ref));

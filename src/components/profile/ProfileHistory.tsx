@@ -31,10 +31,39 @@ export default function ProfileHistory({
   onClearHistory,
 }: ProfileHistoryProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [mediaFilter, setMediaFilter] = useState<'all' | 'movie' | 'tv'>('all');
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'movie' | 'tv' | 'african'>('all');
+
+  const getItemLink = (item: WatchHistoryItem) => {
+    if (item.countryCode && item.slug) {
+      return `/${item.countryCode.toLowerCase()}/movies/${item.slug}`;
+    }
+    if (item.contentId?.startsWith('geo-')) {
+      const parts = item.contentId.split('-');
+      if (parts.length >= 3) {
+        const code = parts[1];
+        const rest = parts.slice(2).join('-');
+        return `/${code.toLowerCase()}/movies/${rest}`;
+      }
+      return `/${(item.countryCode || 'rw').toLowerCase()}/movies/${item.contentId.replace(/^geo-/, '')}`;
+    }
+    return `/watch/${item.contentId}`;
+  };
 
   const filteredHistory = watchHistory.filter((item) => {
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchesSearch =
+      item.title.toLowerCase().includes(q) ||
+      (item.country && item.country.toLowerCase().includes(q)) ||
+      (item.genre && item.genre.some((g) => g.toLowerCase().includes(q)));
+
+    const isAfrican = Boolean(
+      item.country ||
+      item.countryCode ||
+      item.contentId?.startsWith('geo-') ||
+      item.genre?.some((g) => /african|rwanda|nollywood|uganda|kenya|ghana|tanzania|nigeria/i.test(g))
+    );
+
+    if (mediaFilter === 'african') return matchesSearch && isAfrican;
     const matchesType = mediaFilter === 'all' || item.mediaType === mediaFilter;
     return matchesSearch && matchesType;
   });
@@ -113,14 +142,14 @@ export default function ProfileHistory({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <Input
             type="text"
-            placeholder="Search watch history..."
+            placeholder="Search watch history by title, country or genre..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 bg-gray-900 border-gray-800 text-white text-xs h-9"
           />
         </div>
 
-        <div className="flex items-center gap-1.5 bg-gray-900 p-1 rounded-xl border border-gray-800 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-1.5 bg-gray-900 p-1 rounded-xl border border-gray-800 w-full sm:w-auto">
           <button
             onClick={() => setMediaFilter('all')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -128,6 +157,14 @@ export default function ProfileHistory({
             }`}
           >
             All
+          </button>
+          <button
+            onClick={() => setMediaFilter('african')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
+              mediaFilter === 'african' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            🌍 African Cinema
           </button>
           <button
             onClick={() => setMediaFilter('movie')}
@@ -168,6 +205,7 @@ export default function ProfileHistory({
                     const duration = item.durationSeconds || 7200;
                     const pct = Math.min(100, Math.round((item.progressSeconds / duration) * 100));
                     const isFinished = pct >= 95;
+                    const targetLink = getItemLink(item);
 
                     return (
                       <Card
@@ -175,29 +213,42 @@ export default function ProfileHistory({
                         className="bg-gray-900/70 border-gray-800 hover:border-orange-500/30 transition-all overflow-hidden"
                       >
                         <CardContent className="p-3 flex items-center gap-3.5">
-                          <div className="relative w-16 h-20 bg-gray-950 rounded-lg overflow-hidden shrink-0">
+                          <Link to={targetLink} className="relative w-16 h-20 bg-gray-950 rounded-lg overflow-hidden shrink-0 group">
                             <img
                               src={item.posterUrl || POSTER_FALLBACK}
                               alt={item.title}
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                             />
-                            {isFinished && (
+                            {isFinished ? (
                               <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                                 <Badge className="bg-emerald-500 text-white text-[9px] px-1 py-0 font-bold">
                                   Done
                                 </Badge>
                               </div>
+                            ) : (
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                <Play className="w-5 h-5 text-orange-400 fill-current" />
+                              </div>
                             )}
-                          </div>
+                          </Link>
 
                           <div className="flex-1 min-w-0 space-y-1">
-                            <div className="flex items-center gap-1.5">
-                              <Badge
-                                variant="outline"
-                                className="text-[9px] uppercase font-bold border-orange-500/30 text-orange-400 py-0"
-                              >
-                                {item.mediaType === 'tv' ? 'Series' : 'Movie'}
-                              </Badge>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {item.country ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] font-bold border-amber-500/40 bg-amber-500/10 text-amber-300 py-0"
+                                >
+                                  🌍 {item.country}
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] uppercase font-bold border-orange-500/30 text-orange-400 py-0"
+                                >
+                                  {item.mediaType === 'tv' ? 'Series' : 'Movie'}
+                                </Badge>
+                              )}
                               <span className="text-[10px] text-gray-500">
                                 {new Date(normalizeIsoDate(item.watchedAt)).toLocaleTimeString([], {
                                   hour: '2-digit',
@@ -206,7 +257,11 @@ export default function ProfileHistory({
                               </span>
                             </div>
 
-                            <h4 className="text-white font-bold text-sm truncate">{item.title}</h4>
+                            <h4 className="text-white font-bold text-sm truncate">
+                              <Link to={targetLink} className="hover:text-orange-400 transition">
+                                {item.title}
+                              </Link>
+                            </h4>
 
                             <div className="space-y-1 pt-0.5">
                               <Progress value={pct} className="h-1 bg-gray-800" />
@@ -226,7 +281,7 @@ export default function ProfileHistory({
                               asChild
                               className="h-8 px-2.5 bg-orange-500 hover:bg-orange-600 text-white"
                             >
-                              <Link to={`/watch/${item.contentId}`}>
+                              <Link to={targetLink}>
                                 <Play className="w-3.5 h-3.5" />
                               </Link>
                             </Button>

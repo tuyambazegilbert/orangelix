@@ -7,13 +7,14 @@ import { getAllCountries } from '@/features/geo/countryConfig';
 import { GeoContentService } from '@/services/geo-content-service';
 import { GeoContentItem } from '@/types/geo-content';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, Crown, Sparkles, Film } from 'lucide-react';
+import { ArrowRight, Check, Crown, Sparkles, Film, Globe } from 'lucide-react';
 import { tmdbClient } from '@/lib/tmdb/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { FirebaseData } from '@/lib/firebase-data';
 import { useEffect, useState, useMemo } from 'react';
 import { WatchHistoryItem } from '@/types';
 import { MediaItem } from '@/types/media';
+import { getCanonicalMediaId, partitionRails } from '@/lib/deduplication';
 
 import { HeroSkeleton } from '@/components/ui/Skeletons';
 
@@ -128,6 +129,42 @@ export default function Home() {
   }));
   const continueProgress = Object.fromEntries(history.map((item) => [item.contentId, Math.min(100, Math.round(item.progressSeconds / (item.durationSeconds || 7200) * 100))]));
 
+  const partitionedRails = useMemo(() => {
+    // Collect all hero item IDs to exclude from the rails below
+    const heroExcluded = new Set(featured.map(getCanonicalMediaId).filter(Boolean));
+
+    return partitionRails<MediaItem>(
+      [
+        {
+          key: 'trending',
+          items: trending.data?.items || [],
+          maxCount: 12,
+        },
+        {
+          key: 'popularMovies',
+          items: movies.data?.items || [],
+          maxCount: 12,
+        },
+        {
+          key: 'series',
+          items: shows.data?.items || [],
+          maxCount: 12,
+        },
+        {
+          key: 'newReleases',
+          items: releases.data?.items || [],
+          maxCount: 12,
+        },
+        {
+          key: 'recommended',
+          items: topRated.data?.items || [],
+          maxCount: 12,
+        },
+      ],
+      heroExcluded
+    );
+  }, [featured, trending.data?.items, movies.data?.items, shows.data?.items, releases.data?.items, topRated.data?.items]);
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#080d17]">
       {!tmdbClient.hasToken() && (
@@ -157,24 +194,56 @@ export default function Home() {
       )}
 
       <main className="page-wrap space-y-6 py-6">
-        <section className="space-y-3 rounded-2xl border border-white/[.08] bg-[#0d1320]/80 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-          <div className="flex items-center justify-between gap-3">
+        {/* Sleek African Cinema Territory Explorer Ribbon */}
+        <section className="rounded-2xl border border-white/[.08] bg-gradient-to-r from-[#0d1320]/95 via-[#11192e]/90 to-[#0d1320]/95 p-3 sm:p-3.5 backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.22)] flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 shrink-0">
+              <Globe className="h-4 w-4" />
+            </span>
             <div>
-              <p className="section-eyebrow mb-1 text-orange-300">Multi-country cinema</p>
-              <h2 className="text-xl font-black text-white">Explore other territories</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-white tracking-tight leading-tight">African Cinema Territories</h2>
+                <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 text-[10px] font-semibold uppercase tracking-wider">
+                  Regional Hubs
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">Select a country to browse curated regional productions</p>
             </div>
-            <Link to="/movies" className="text-xs font-semibold text-orange-300 hover:text-orange-200">Open catalog →</Link>
           </div>
-          <GeoCountryShowcase
-            currentCountryCode="RW"
-            countries={countries}
-            onSelectCountry={(code) => navigate(`/${code.toLowerCase()}/movies`)}
-          />
+          <div className="flex-1 min-w-0 md:max-w-2xl">
+            <GeoCountryShowcase
+              showTitle={false}
+              currentCountryCode="RW"
+              countries={countries}
+              onSelectCountry={(code) => navigate(`/${code.toLowerCase()}/movies`)}
+            />
+          </div>
         </section>
 
-        <ContentRail title="Trending now" eyebrow="Most watched this week" items={trending.data?.items?.slice(6, 18) || []} href="/trending" loading={trending.isLoading} />
-        {continueItems.length > 0 && <ContentRail title="Continue watching" eyebrow="Pick up where you left off" items={continueItems} href="/profile" variant="continue" progressById={continueProgress} />}
-        <ContentRail title="Popular movies" eyebrow="Find your next favorite" items={movies.data?.items?.slice(0, 12) || []} href="/movies" loading={movies.isLoading} />
+        <ContentRail
+          title="Trending now"
+          eyebrow="Most watched this week"
+          items={partitionedRails.trending || []}
+          href="/trending"
+          loading={trending.isLoading}
+        />
+        {continueItems.length > 0 && (
+          <ContentRail
+            title="Continue watching"
+            eyebrow="Pick up where you left off"
+            items={continueItems}
+            href="/profile"
+            variant="continue"
+            progressById={continueProgress}
+          />
+        )}
+        <ContentRail
+          title="Popular movies"
+          eyebrow="Find your next favorite"
+          items={partitionedRails.popularMovies || []}
+          href="/movies"
+          loading={movies.isLoading}
+        />
         
         {/* OrangeFlix Premium Banner */}
         <section className="my-5 grid overflow-hidden rounded-2xl border border-white/[.1] bg-[radial-gradient(circle_at_75%_0%,rgba(130,93,255,.35),transparent_38%),linear-gradient(105deg,#131525,#271b35)] p-6 sm:my-8 sm:grid-cols-[1fr_auto] sm:items-center sm:p-8">
@@ -195,9 +264,27 @@ export default function Home() {
           </Link>
         </section>
 
-        <ContentRail title="Binge-worthy series" eyebrow="Pick up a new obsession" items={shows.data?.items?.slice(0, 12) || []} href="/series" loading={shows.isLoading} />
-        <ContentRail title="New in theatres" eyebrow="Fresh arrivals" items={releases.data?.items?.slice(0, 12) || []} href="/new" loading={releases.isLoading} />
-        <ContentRail title="Recommended for you" eyebrow="Highly rated picks" items={topRated.data?.items?.slice(0, 12) || []} href="/movies?sort=rating" loading={topRated.isLoading} />
+        <ContentRail
+          title="Binge-worthy series"
+          eyebrow="Pick up a new obsession"
+          items={partitionedRails.series || []}
+          href="/series"
+          loading={shows.isLoading}
+        />
+        <ContentRail
+          title="New in theatres"
+          eyebrow="Fresh arrivals"
+          items={partitionedRails.newReleases || []}
+          href="/new"
+          loading={releases.isLoading}
+        />
+        <ContentRail
+          title="Recommended for you"
+          eyebrow="Highly rated picks"
+          items={partitionedRails.recommended || []}
+          href="/movies?sort=rating"
+          loading={topRated.isLoading}
+        />
         
         {/* Geo Cinema Section Placed Prominently on Landing Page */}
         <section className="pt-4 border-t border-gray-800/80 space-y-4">

@@ -149,17 +149,36 @@ function createSlug(text: string): string {
 /** Fetch live factual production / reception summary from Wikipedia REST API */
 async function fetchWikipediaArticle(title: string, isTv: boolean): Promise<NewsArticle | null> {
   try {
-    const clean = title.replace(/[:\-–]/g, ' ').trim();
-    const querySuffix = isTv ? ' (TV series)' : ' (film)';
-    
-    // Try with suffix first, then raw
-    let res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(clean + querySuffix)}`);
-    if (!res.ok) {
-      res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(clean)}`);
-    }
+    const clean = title.replace(/[:\-–]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!clean) return null;
 
-    if (!res.ok) return null;
-    const data = await res.json() as {
+    // Search Wikipedia for real articles matching the title
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+      clean + (isTv ? ' TV series' : ' film')
+    )}&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) return null;
+
+    const searchData = (await searchRes.json()) as {
+      query?: {
+        search?: Array<{
+          title: string;
+          snippet?: string;
+          pageid?: number;
+        }>;
+      };
+    };
+
+    const firstMatch = searchData.query?.search?.[0];
+    if (!firstMatch || !firstMatch.title) return null;
+
+    // Fetch summary for the resolved Wikipedia article title
+    const summaryRes = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(firstMatch.title)}`
+    );
+    if (!summaryRes.ok) return null;
+
+    const data = (await summaryRes.json()) as {
       title?: string;
       extract?: string;
       thumbnail?: { source: string };
@@ -173,18 +192,18 @@ async function fetchWikipediaArticle(title: string, isTv: boolean): Promise<News
     const article: NewsArticle = {
       id: `news-wiki-${baseSlug}`,
       slug: `${baseSlug}-production-history-and-reception`,
-      title: `"${title}": Production History, Development & Reception`,
+      title: `"${data.title || title}": Production History, Development & Reception`,
       summary: data.extract.length > 200 ? data.extract.substring(0, 197) + '...' : data.extract,
-      content: `${data.extract}\n\nAccording to cinematic records, the project stands out for its unique development journey, distribution strategy, and cultural resonance. ${data.description ? `Documented classification: ${data.description}.` : ''}\n\nFor verified archival details, historical box office statistics, and full production credits, explore the official documentation records.`,
+      content: `${data.extract}\n\nDocumented record: ${data.description || 'Cinema historical production archive'}.\n\nExplore official archival production documentation, box office performance, and development records from verified sources.`,
       category: isTv ? 'TV' : 'Movies',
       imageUrl: data.thumbnail?.source || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800',
       source: 'Wikipedia Cinema Archives',
-      sourceUrl: data.content_urls?.desktop?.page,
+      sourceUrl: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(firstMatch.title)}`,
       publishedAt: new Date().toISOString(),
       readTime: '4 min read',
       author: 'Cinema Reference Bureau',
       relatedMovieTitle: title,
-      tags: [title, isTv ? 'TV Series' : 'Movie', 'Production', 'History'],
+      tags: [title, isTv ? 'TV Series' : 'Movie', 'Production', 'History', 'Archives'],
     };
 
     dynamicArticlesMap.set(article.slug, article);

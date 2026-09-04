@@ -16,6 +16,8 @@ export const tmdbEndpoints = {
   movieVideos: (id: number) => `/movie/${id}/videos`,
   movieSimilar: (id: number) => `/movie/${id}/similar`,
   movieRecommendations: (id: number) => `/movie/${id}/recommendations`,
+  movieReviews: (id: number) => `/movie/${id}/reviews`,
+  movieWatchProviders: (id: number) => `/movie/${id}/watch/providers`,
 
   // TV Shows / Series
   popularSeries: '/tv/popular',
@@ -27,6 +29,8 @@ export const tmdbEndpoints = {
   seriesVideos: (id: number) => `/tv/${id}/videos`,
   seriesSimilar: (id: number) => `/tv/${id}/similar`,
   seriesRecommendations: (id: number) => `/tv/${id}/recommendations`,
+  seriesReviews: (id: number) => `/tv/${id}/reviews`,
+  seriesWatchProviders: (id: number) => `/tv/${id}/watch/providers`,
   seasonDetails: (seriesId: number, seasonNumber: number) => `/tv/${seriesId}/season/${seasonNumber}`,
 
   // Search

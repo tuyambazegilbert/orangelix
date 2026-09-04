@@ -56,6 +56,22 @@ export default function ProfileOverview({
   onRemoveHistoryItem,
   onNavigateTab,
 }: ProfileOverviewProps) {
+  const getItemLink = (item: WatchHistoryItem) => {
+    if (item.countryCode && item.slug) {
+      return `/${item.countryCode.toLowerCase()}/movies/${item.slug}`;
+    }
+    if (item.contentId?.startsWith('geo-')) {
+      const parts = item.contentId.split('-');
+      if (parts.length >= 3) {
+        const code = parts[1];
+        const rest = parts.slice(2).join('-');
+        return `/${code.toLowerCase()}/movies/${rest}`;
+      }
+      return `/${(item.countryCode || 'rw').toLowerCase()}/movies/${item.contentId.replace(/^geo-/, '')}`;
+    }
+    return `/watch/${item.contentId}`;
+  };
+
   // Continue Watching items (progress > 0 and not fully finished)
   const continueWatchingItems = watchHistory
     .filter((h) => h.progressSeconds > 0 && h.progressSeconds < (h.durationSeconds || 7200) * 0.95)
@@ -367,7 +383,7 @@ export default function ProfileOverview({
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-transparent to-transparent" />
                     <Link
-                      to={`/watch/${item.contentId}`}
+                      to={getItemLink(item)}
                       className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       <div className="w-12 h-12 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-950/60">
@@ -377,11 +393,22 @@ export default function ProfileOverview({
                   </div>
 
                   <div className="p-3.5 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-white font-bold text-sm truncate">{item.title}</h4>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="min-w-0 flex-1">
+                        {item.country && (
+                          <span className="text-[9px] font-bold text-amber-400 block truncate">
+                            🌍 {item.country} Cinema
+                          </span>
+                        )}
+                        <h4 className="text-white font-bold text-sm truncate">
+                          <Link to={getItemLink(item)} className="hover:text-orange-400 transition">
+                            {item.title}
+                          </Link>
+                        </h4>
+                      </div>
                       <button
                         onClick={() => onRemoveHistoryItem(item.contentId)}
-                        className="text-gray-500 hover:text-red-400 p-1"
+                        className="text-gray-500 hover:text-red-400 p-1 shrink-0"
                         title="Remove from continue watching"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

@@ -34,6 +34,9 @@ import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { PROFILE_FALLBACK, POSTER_FALLBACK, BACKDROP_FALLBACK } from '@/lib/tmdb/images';
+import { toGenreSlug } from '@/lib/utils';
+import MediaReviewsSection from '@/components/reviews/MediaReviewsSection';
+import { WhereToWatchProviders } from '@/components/watch/WhereToWatchProviders';
 
 import { DetailHeroSkeleton } from '@/components/ui/Skeletons';
 
@@ -45,7 +48,7 @@ export default function SeriesDetail() {
   const { data: series, isLoading, error } = useSeriesDetails(seriesId);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [showTrailer, setShowTrailer] = useState(false);
-  const { data: seasonData } = useSeasonDetails(seriesId, selectedSeason);
+  const { data: episodes, isLoading: isEpisodesLoading } = useSeasonDetails(seriesId, selectedSeason);
 
   // Content Graph State
   const [relations, setRelations] = useState<ContentEntityRelations>({
@@ -54,6 +57,19 @@ export default function SeriesDetail() {
     sourceBook: null,
   });
   const [isLoadingRelations, setIsLoadingRelations] = useState(true);
+
+  // Sync selectedSeason when seasons load if current season is invalid
+  useEffect(() => {
+    if (series?.seasons && series.seasons.length > 0) {
+      const hasCurrent = series.seasons.some((s) => s.seasonNumber === selectedSeason);
+      if (!hasCurrent) {
+        const firstValid = series.seasons.find((s) => s.seasonNumber > 0) || series.seasons[0];
+        if (firstValid) {
+          setSelectedSeason(firstValid.seasonNumber);
+        }
+      }
+    }
+  }, [series?.seasons, selectedSeason]);
 
   // Track Analytics View
   useEffect(() => {
@@ -404,6 +420,13 @@ export default function SeriesDetail() {
           <p className="text-gray-300 text-base leading-relaxed max-w-4xl">{series.description}</p>
         </div>
 
+        {/* Where to Watch Full Series (TMDB & JustWatch Providers) */}
+        <WhereToWatchProviders
+          mediaType="tv"
+          tmdbId={series.tmdbId}
+          title={series.title}
+        />
+
         {/* Seasons & Episode Guide */}
         {series.seasons && series.seasons.length > 0 && (
           <div className="space-y-6">
@@ -443,33 +466,41 @@ export default function SeriesDetail() {
             ) : episodes && episodes.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {episodes.map((ep) => (
-                  <Card
+                  <Link
                     key={ep.id}
-                    className="bg-gray-900/50 border-gray-800 overflow-hidden flex flex-col justify-between hover:border-orange-500/30 transition"
+                    to={`/watch/tv-${series.tmdbId}?season=${selectedSeason}&episode=${ep.episodeNumber}`}
+                    className="group block"
                   >
-                    <div className="flex gap-4 p-4">
-                      <div className="w-32 h-20 bg-gray-950 rounded-lg overflow-hidden shrink-0 relative">
-                        <img
-                          src={ep.stillUrl || series.backdropUrl || BACKDROP_FALLBACK}
-                          alt={ep.name}
-                          className="w-full h-full object-cover"
-                        />
-                        <span className="absolute bottom-1 right-1 bg-black/80 text-[10px] font-mono px-1 rounded text-orange-400">
-                          {ep.duration ? `${ep.duration}m` : '45m'}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <h4 className="font-bold text-white text-sm truncate">
-                            E{ep.episodeNumber}. {ep.name}
-                          </h4>
+                    <Card className="bg-gray-900/50 border-gray-800 overflow-hidden flex flex-col justify-between hover:border-orange-500/40 hover:bg-gray-900/80 transition cursor-pointer">
+                      <div className="flex gap-4 p-4">
+                        <div className="w-32 h-20 bg-gray-950 rounded-lg overflow-hidden shrink-0 relative">
+                          <img
+                            src={ep.stillUrl || series.backdropUrl || BACKDROP_FALLBACK}
+                            alt={ep.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <div className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-lg">
+                              <Play className="w-4 h-4 fill-current ml-0.5" />
+                            </div>
+                          </div>
+                          <span className="absolute bottom-1 right-1 bg-black/80 text-[10px] font-mono px-1 rounded text-orange-400">
+                            {ep.duration ? `${ep.duration}m` : '45m'}
+                          </span>
                         </div>
-                        <p className="text-xs text-gray-400 line-clamp-2 mt-1">
-                          {ep.overview || 'No episode synopsis provided.'}
-                        </p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <h4 className="font-bold text-white text-sm truncate group-hover:text-orange-400 transition-colors">
+                              E{ep.episodeNumber}. {ep.name}
+                            </h4>
+                          </div>
+                          <p className="text-xs text-gray-400 line-clamp-2 mt-1">
+                            {ep.overview || 'Watch episode now on OrangeFlix.'}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </Link>
                 ))}
               </div>
             ) : (
@@ -526,6 +557,16 @@ export default function SeriesDetail() {
         <RelatedNews
           news={relations.news}
           isLoading={isLoadingRelations}
+        />
+
+        {/* TMDB & Community Reviews Section */}
+        <MediaReviewsSection
+          mediaType="tv"
+          tmdbId={series.tmdbId}
+          mediaTitle={series.title}
+          voteAverage={series.voteAverage}
+          voteCount={series.voteCount}
+          rawId={rawId}
         />
 
         {/* Similar Series */}

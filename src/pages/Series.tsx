@@ -11,6 +11,7 @@ import { Search, ChevronLeft, ChevronRight, Tv, SlidersHorizontal } from 'lucide
 import { useNavigate } from 'react-router-dom';
 
 import { HeroSkeleton, MovieGridSkeleton } from '@/components/ui/Skeletons';
+import { filterOutHeroItems, deduplicateList } from '@/lib/deduplication';
 
 export default function Series() {
   const navigate = useNavigate();
@@ -47,7 +48,15 @@ export default function Series() {
   const totalPages = Math.min(activeData.totalPages, 500);
 
   // Top 6 featured items for 3D Stage Slider Hero
-  const featuredSeries = discoverData?.items?.slice(0, 6) || [];
+  const featuredSeries = useMemo(() => discoverData?.items?.slice(0, 6) || [], [discoverData?.items]);
+
+  const gridItems = useMemo(() => {
+    const rawItems = activeData.items;
+    if (!isSearching && currentPage === 1 && featuredSeries.length > 0) {
+      return filterOutHeroItems(featuredSeries, rawItems);
+    }
+    return deduplicateList(rawItems);
+  }, [isSearching, currentPage, featuredSeries, activeData.items]);
 
   const handleGenreChange = (genreId: string) => {
     setSelectedGenre(genreId);
@@ -77,37 +86,49 @@ export default function Series() {
 
       <main className="page-wrap py-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5 tracking-tight">
-              <Tv className="w-7 h-7 text-orange-400" />
-              TV Series & Shows
-            </h1>
-            <p className="text-gray-400 text-xs sm:text-sm mt-0.5">
-              Stream top TV shows, seasons, and episodes from TMDB and regional creators
-            </p>
-          </div>
-        </div>
+        {/* Compact Pro Series Command Deck */}
+        <section className="rounded-2xl border border-white/[.08] bg-gradient-to-r from-[#0d1322]/95 via-[#111827]/90 to-[#0d1322]/95 p-3.5 sm:p-4 backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.25)] space-y-3">
+          {/* Top Bar: Title & Status */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 shrink-0">
+                <Tv className="w-4 h-4" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-base sm:text-lg font-black text-white tracking-tight">
+                    TV Series & Shows
+                  </h1>
+                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-white/[.06] text-[11px] font-medium text-slate-300">
+                    Binge-Worthy Epics
+                  </span>
+                </div>
+              </div>
+            </div>
 
-        {/* Filters and Search Bar */}
-        <div className="p-4 rounded-2xl bg-gray-900/50 border border-gray-800/80 space-y-4 md:space-y-0 md:flex md:items-center md:gap-4 shadow-xl">
-          {/* Search */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              type="search"
-              placeholder="Search TV series by title or keyword..."
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="pl-10 bg-gray-950 border-gray-800 text-white placeholder-gray-500 rounded-xl text-xs h-10 focus:border-orange-500"
-            />
+            <span className="text-[11px] text-slate-400 font-mono px-2 py-1 rounded bg-white/[.04] border border-white/[.06] shrink-0 self-end sm:self-auto">
+              Page <span className="text-orange-400 font-bold">{currentPage}</span> of {totalPages}
+            </span>
           </div>
 
-          {/* Genre Filter */}
-          {!isSearching && (
-            <div className="flex items-center space-x-2">
+          {/* Filters & Search Row */}
+          <div className="flex flex-col md:flex-row md:items-center gap-2.5 pt-1 border-t border-white/[.06]">
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+              <Input
+                type="search"
+                placeholder="Search TV series by title or keyword..."
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="pl-8 bg-slate-950/80 border-white/10 text-white placeholder-slate-500 rounded-lg text-xs h-8 focus:border-orange-500"
+              />
+            </div>
+
+            {/* Genre Filter */}
+            {!isSearching && (
               <Select value={selectedGenre} onValueChange={handleGenreChange}>
-                <SelectTrigger className="w-full md:w-48 bg-gray-950 border-gray-800 text-white rounded-xl text-xs h-10">
+                <SelectTrigger className="w-full md:w-44 bg-slate-950/80 border-white/10 text-white rounded-lg text-xs h-8">
                   <SelectValue placeholder="All Genres" />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-900 border-gray-800 text-white max-h-72">
@@ -119,15 +140,13 @@ export default function Series() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          )}
+            )}
 
-          {/* Sort Filter */}
-          {!isSearching && (
-            <div className="flex items-center space-x-2">
+            {/* Sort Filter */}
+            {!isSearching && (
               <Select value={sortBy} onValueChange={handleSortChange}>
-                <SelectTrigger className="w-full md:w-48 bg-gray-950 border-gray-800 text-white rounded-xl text-xs h-10">
-                  <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5 text-orange-400" />
+                <SelectTrigger className="w-full md:w-40 bg-slate-950/80 border-white/10 text-white rounded-lg text-xs h-8">
+                  <SlidersHorizontal className="w-3.5 h-3.5 mr-1 text-orange-400" />
                   <SelectValue placeholder="Sort By" />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-900 border-gray-800 text-white">
@@ -136,14 +155,14 @@ export default function Series() {
                   <SelectItem value="first_air_date.desc">Release Date</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </section>
 
         {/* Content Grid */}
         {isLoading ? (
           <MovieGridSkeleton count={18} />
-        ) : activeData.items.length === 0 ? (
+        ) : gridItems.length === 0 ? (
           <div className="text-center py-20 bg-gray-900/30 rounded-3xl border border-gray-800/60 p-8 space-y-3">
             <Tv className="w-12 h-12 text-gray-600 mx-auto" />
             <h3 className="text-xl font-bold text-white">No Series Found</h3>
@@ -153,7 +172,7 @@ export default function Series() {
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {activeData.items.map((show) => (
+            {gridItems.map((show) => (
               <MovieCard key={show.id} movie={show} />
             ))}
           </div>

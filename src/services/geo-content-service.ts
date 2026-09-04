@@ -36,6 +36,7 @@ import {
 import { YouTubeDiscoveryWorker, DiscoveryWorkerResult } from '@/features/youtube/discoveryWorker';
 import { YouTubeClient } from '@/features/youtube/client';
 import { classifyYouTubeVideo } from '@/features/youtube/classifier';
+import { getCanonicalMediaId, partitionRails, deduplicateList } from '@/lib/deduplication';
 
 const LOCAL_STORAGE_CACHE_KEY = 'orangeflix_geo_content_cache';
 const LOCAL_STORAGE_LOGS_KEY = 'orangeflix_geo_logs_cache';
@@ -179,8 +180,8 @@ export const GeoContentService = {
       try {
         const contentRef = collection(firestore, 'geoContent');
         const [snap1, snap2] = await Promise.all([
-          getDocs(query(contentRef, where('country', '==', countryCode), firestoreLimit(150))),
-          getDocs(query(contentRef, where('countryCode', '==', countryCode), firestoreLimit(150))),
+          getDocs(query(contentRef, where('country', '==', countryCode), firestoreLimit(5000))),
+          getDocs(query(contentRef, where('countryCode', '==', countryCode), firestoreLimit(5000))),
         ]);
 
         const allDocs = [...snap1.docs, ...snap2.docs];
@@ -441,6 +442,107 @@ export const GeoContentService = {
     }
 
     return res.items;
+  },
+
+  /**
+   * African Cinema Watch Page Contextual Recommendations
+   * Computes clean, non-overlapping sets of:
+   * - selectedForYou ("Because you watched this" / "Selected for you")
+   * - similarStories ("Similar stories" / "More like this")
+   * - trendingNow ("Trending now" / "What everyone is watching")
+   * - upNext (Sidebar upcoming queue)
+   * Guaranteed 100% deduplicated across all sections so no movie is repeated on the page.
+   */
+  async getAfricanCinemaWatchRecommendations(
+    currentMovie: GeoContentItem,
+    countryCode: string = 'RW'
+  ): Promise<{
+    selectedForYou: GeoContentItem[];
+    similarStories: GeoContentItem[];
+    trendingNow: GeoContentItem[];
+    upNext: GeoContentItem[];
+  }> {
+    hydrateLocalCache();
+    const currentTags = (currentMovie.tags || []).map((t) => t.toLowerCase());
+    const currentChannel = (currentMovie.channelTitle || '').toLowerCase();
+    const currentClassification = currentMovie.classification || currentMovie.contentType;
+
+    // 1. Fetch movies from this country
+    const countryRes = await this.getMoviesByCountry({
+      countryCode,
+      status: 'published',
+      limit: 80,
+    });
+
+    // 2. Fetch all candidates from memory cache for cross-country recommendations
+    const allCached = Array.from(memoryCache.values()).filter(
+      (m) => m && m.id && m.status !== 'unavailable' && (m.status === 'published' || m.moderationStatus === 'approved')
+    );
+
+    // Initial excluded keys: the current movie itself
+    const currentKey = getCanonicalMediaId(currentMovie);
+    const excludeSet = new Set<string>([currentKey]);
+
+    // Candidate Pool 1: Same country items
+    const countryCandidates = countryRes.items.filter(
+      (m) => getCanonicalMediaId(m) !== currentKey
+    );
+
+    // Candidate Pool 2: Thematic / Tag / Channel matches across African cinema
+    const similarCandidates = allCached.filter((m) => {
+      const k = getCanonicalMediaId(m);
+      if (k === currentKey) return false;
+      const mTags = (m.tags || []).map((t) => t.toLowerCase());
+      const hasTagOverlap = mTags.some((t) => currentTags.includes(t));
+      const hasChannelMatch = currentChannel && (m.channelTitle || '').toLowerCase() === currentChannel;
+      const hasClassMatch =
+        currentClassification &&
+        (m.classification === currentClassification || m.contentType === currentClassification);
+      return hasTagOverlap || hasChannelMatch || hasClassMatch;
+    });
+
+    // Candidate Pool 3: Trending African Cinema across territories
+    const trendingCandidates = [...allCached].sort(
+      (a, b) => (b.views || b.viewCount || 0) - (a.views || a.viewCount || 0)
+    );
+
+    // Partition into strictly unique, non-overlapping rails
+    const partitioned = partitionRails<GeoContentItem>(
+      [
+        {
+          key: 'upNext',
+          items: countryCandidates.slice(0, 8),
+          maxCount: 6,
+          fallbackItems: similarCandidates,
+        },
+        {
+          key: 'selectedForYou',
+          items: countryCandidates,
+          maxCount: 12,
+          fallbackItems: trendingCandidates,
+        },
+        {
+          key: 'similarStories',
+          items: similarCandidates,
+          maxCount: 12,
+          fallbackItems: countryCandidates,
+        },
+        {
+          key: 'trendingNow',
+          items: trendingCandidates,
+          maxCount: 12,
+          fallbackItems: countryCandidates,
+        },
+      ],
+      excludeSet
+    );
+
+    return {
+      upNext: partitioned.upNext || [],
+      selectedForYou: partitioned.selectedForYou || [],
+      similarStories: partitioned.similarStories || [],
+      trendingNow: partitioned.trendingNow || [],
+    };
   },
 
   /** Search across ALL countries and territories for cinematic geo movies (0 external API cost) */

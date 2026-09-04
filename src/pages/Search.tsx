@@ -1,10 +1,11 @@
 import { FormEvent, useState, useEffect, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { useSearchMulti } from '@/hooks/use-tmdb';
 import { NewsApi, NewsArticle } from '@/services/news-api';
 import { MusicApi, SoundtrackTrack } from '@/services/music-api';
-import { GeoContentService } from '@/services/geo-content-service';
 import { GeoContentItem } from '@/types/geo-content';
+import { MediaItem } from '@/types/media';
+import { HybridSearchEngine, HybridSearchResult } from '@/lib/search/hybrid-search-engine';
+import { parseSearchQuery, ParsedSearchQuery } from '@/lib/search/query-parser';
 import MovieCard from '@/components/MovieCard';
 import CountryMovieCard from '@/components/geo/CountryMovieCard';
 import SEOHead from '@/components/seo/SEOHead';
@@ -21,9 +22,13 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  Play,
   ArrowRight,
   Globe,
+  User,
+  ShieldAlert,
+  Compass,
+  CheckCircle2,
+  Info,
 } from 'lucide-react';
 
 export default function Search() {
@@ -35,14 +40,13 @@ export default function Search() {
   const [activeTab, setActiveTab] = useState<'all' | 'movies' | 'tv' | 'cinema' | 'news' | 'music'>('all');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // External & Geo search results
+  // Search results state
+  const [searchResults, setSearchResults] = useState<HybridSearchResult | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [newsResults, setNewsResults] = useState<NewsArticle[]>([]);
   const [musicResults, setMusicResults] = useState<SoundtrackTrack[]>([]);
-  const [geoResults, setGeoResults] = useState<GeoContentItem[]>([]);
-  const [isGeoLoading, setIsGeoLoading] = useState(false);
 
-  // A header search can navigate to this same route with a different `q` value.
-  // Keep the mounted page in sync with the URL before its local debounce runs.
+  // Keep in sync with URL
   useEffect(() => {
     if (previousUrlQuery.current === urlQuery) return;
     previousUrlQuery.current = urlQuery;
@@ -51,7 +55,7 @@ export default function Search() {
     setCurrentPage(1);
   }, [urlQuery]);
 
-  // Update the address and results after the user pauses typing in this page's input.
+  // Debounced search trigger
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedQuery(query);
@@ -61,51 +65,49 @@ export default function Search() {
         setSearchParams({}, { replace: true });
       }
       setCurrentPage(1);
-    }, 350);
+    }, 300);
 
     return () => clearTimeout(handler);
   }, [query, setSearchParams]);
 
-  // TMDB Multi Search
-  const { data: searchData, isLoading } = useSearchMulti(debouncedQuery, currentPage);
-
-  // Search Geo Cinema, News and Music when query changes
+  // Execute Hybrid Multi-Stage Search
   useEffect(() => {
     if (!debouncedQuery.trim()) {
+      setSearchResults(null);
       setNewsResults([]);
       setMusicResults([]);
-      setGeoResults([]);
       return;
     }
 
-    let current = true;
-    setIsGeoLoading(true);
+    let isMounted = true;
+    setIsSearching(true);
 
-    void GeoContentService.searchAllCinematicMovies(debouncedQuery, 40)
-      .then((results) => {
-        if (current) {
-          setGeoResults(results);
-          setIsGeoLoading(false);
-        }
-      })
-      .catch(() => {
-        if (current) setIsGeoLoading(false);
-      });
-
-    void NewsApi.searchArticles(debouncedQuery).then((results) => {
-      if (current) setNewsResults(results);
+    void Promise.all([
+      HybridSearchEngine.search(debouncedQuery, currentPage),
+      NewsApi.searchArticles(debouncedQuery).catch(() => []),
+      MusicApi.searchMovieSoundtrack(debouncedQuery).catch(() => ({ tracks: [] })),
+    ]).then(([res, news, music]) => {
+      if (isMounted) {
+        setSearchResults(res);
+        setNewsResults(news);
+        setMusicResults(music.tracks || []);
+        setIsSearching(false);
+      }
     });
-    void MusicApi.searchMovieSoundtrack(debouncedQuery).then((res) => {
-      if (current) setMusicResults(res.tracks);
-    });
-    return () => { current = false; };
-  }, [debouncedQuery]);
 
-  const rawItems = searchData?.items || [];
+    return () => {
+      isMounted = false;
+    };
+  }, [debouncedQuery, currentPage]);
+
+  const rawItems = searchResults?.items || [];
   const movieItems = rawItems.filter((i) => i.mediaType === 'movie');
   const tvItems = rawItems.filter((i) => i.mediaType === 'tv');
+  const geoResults = searchResults?.geoCinemaItems || [];
 
-  const totalPages = Math.min(searchData?.totalPages || 1, 500);
+  const totalAllResults = rawItems.length + geoResults.length + newsResults.length + musicResults.length;
+  const analysis = searchResults?.queryAnalysis;
+
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     const nextQuery = query.trim();
@@ -114,117 +116,191 @@ export default function Search() {
     setCurrentPage(1);
   };
 
-  const totalAllResults = rawItems.length + geoResults.length + newsResults.length + musicResults.length;
+  const handleApplySuggestion = (suggestion: string) => {
+    setQuery(suggestion);
+    setDebouncedQuery(suggestion);
+    setSearchParams({ q: suggestion }, { replace: true });
+    setCurrentPage(1);
+  };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-[#080b12] text-white">
       <SEOHead
-        title={debouncedQuery ? `Search results for "${debouncedQuery}"` : 'Search Movies, Series, Cinema & Music'}
-        description="Search across our complete catalog of films, television series, African & global cinema, entertainment news, and soundtrack scores."
+        title={debouncedQuery ? `Search results for "${debouncedQuery}" — OrangeFlix` : 'Search Movies, Series, Cinema & Music — OrangeFlix'}
+        description="Hybrid multi-stage search engine for blockbusters, regional African cinema, cast, characters, news, and soundtracks."
         noindex={!debouncedQuery}
       />
 
-      <div className="page-wrap py-8">
-        <Breadcrumbs items={[{ name: 'Search 2.0', url: '/search' }]} />
+      <div className="page-wrap py-6 space-y-6">
+        <Breadcrumbs items={[{ name: 'Hybrid Search 2.0', url: '/search' }]} />
 
-        {/* Search Header and Bar */}
-        <div className="mb-8 space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-semibold">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Search 2.0 Multi-Entity Engine</span>
-          </div>
+        {/* Search Header and Pro Search Bar */}
+        <section className="space-y-4 max-w-3xl">
+          
 
-          <h1 className="text-3xl md:text-4xl font-extrabold text-white">
-            Search <span className="text-orange-400">OrangeFlix</span>
+          <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
+            Search <span className="text-orange-400">OrangeFlix Cinema</span>
           </h1>
 
-          <form onSubmit={submitSearch} className="relative max-w-2xl">
+          <form onSubmit={submitSearch} className="relative">
             <SearchIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 text-orange-400 w-5 h-5" />
             <Input
               type="text"
-              placeholder="Search for movies, African cinema, series, news, soundtracks..."
+              placeholder="Search by title, character (e.g. Iron Man), actor, director, genre, or plot description..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="pl-12 py-6 text-base bg-gray-900 border-gray-700 text-white placeholder-gray-500 rounded-2xl focus:border-orange-500 focus:ring-orange-500/20"
+              className="pl-12 py-5 text-sm sm:text-base bg-slate-900/90 border-white/10 text-white placeholder-slate-500 rounded-2xl focus:border-orange-500 focus:ring-orange-500/20 shadow-xl"
             />
           </form>
-        </div>
+        </section>
+
+        {/* Query Intent & Typo Correction Feedback Banner */}
+        {analysis && debouncedQuery && (
+          <div className="space-y-3">
+            {/* 1. Typo Correction / "Showing results for" Banner */}
+            {analysis.isCorrected && analysis.correctedQuery !== analysis.normalizedQuery && (
+              <div className="p-3.5 rounded-xl bg-orange-500/10 border border-orange-500/25 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-orange-400 shrink-0" />
+                  <span>
+                    Showing results for <strong className="text-white capitalize">{analysis.correctedQuery}</strong>
+                    <span className="text-slate-400 ml-1.5">(auto-corrected from "{analysis.rawQuery}")</span>
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleApplySuggestion(analysis.rawQuery)}
+                  className="text-orange-400 hover:underline shrink-0 font-medium"
+                >
+                  Search exact "{analysis.rawQuery}"
+                </button>
+              </div>
+            )}
+
+            
+
+            {/* 3. Fallback Notice if exact returned 0 and relaxed were fetched */}
+            {searchResults?.isFallback && (
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center gap-2.5 text-xs text-blue-200">
+                <Info className="w-4 h-4 text-blue-400 shrink-0" />
+                <span>No exact matches were found for your query. Showing top trending and recommended cinema below.</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Multi-Entity Tab Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-8 border-b border-white/[.07] scrollbar-hide">
-          <Button
-            variant={activeTab === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveTab('all')}
-            className={activeTab === 'all' ? 'bg-orange-500 text-white rounded-full text-xs font-semibold' : 'border-white/10 text-slate-300 rounded-full text-xs'}
-          >
-            All Results ({totalAllResults})
-          </Button>
-          <Button
-            variant={activeTab === 'cinema' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveTab('cinema')}
-            className={activeTab === 'cinema' ? 'bg-orange-500 text-white rounded-full text-xs font-semibold' : 'border-white/10 text-slate-300 rounded-full text-xs'}
-          >
-            <Globe className="w-3.5 h-3.5 mr-1" /> Geo Cinema ({geoResults.length})
-          </Button>
-          <Button
-            variant={activeTab === 'movies' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveTab('movies')}
-            className={activeTab === 'movies' ? 'bg-orange-500 text-white rounded-full text-xs font-semibold' : 'border-white/10 text-slate-300 rounded-full text-xs'}
-          >
-            <Film className="w-3.5 h-3.5 mr-1" /> Movies ({movieItems.length})
-          </Button>
-          <Button
-            variant={activeTab === 'tv' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveTab('tv')}
-            className={activeTab === 'tv' ? 'bg-orange-500 text-white rounded-full text-xs font-semibold' : 'border-white/10 text-slate-300 rounded-full text-xs'}
-          >
-            <Tv className="w-3.5 h-3.5 mr-1" /> Series ({tvItems.length})
-          </Button>
-          <Button
-            variant={activeTab === 'news' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveTab('news')}
-            className={activeTab === 'news' ? 'bg-orange-500 text-white rounded-full text-xs font-semibold' : 'border-white/10 text-slate-300 rounded-full text-xs'}
-          >
-            <Newspaper className="w-3.5 h-3.5 mr-1" /> News ({newsResults.length})
-          </Button>
-          <Button
-            variant={activeTab === 'music' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setActiveTab('music')}
-            className={activeTab === 'music' ? 'bg-orange-500 text-white rounded-full text-xs font-semibold' : 'border-white/10 text-slate-300 rounded-full text-xs'}
-          >
-            <Music2 className="w-3.5 h-3.5 mr-1" /> Soundtracks ({musicResults.length})
-          </Button>
-        </div>
+        {debouncedQuery && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-white/[.08] scrollbar-none">
+            <Button
+              variant={activeTab === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('all')}
+              className={
+                activeTab === 'all'
+                  ? 'bg-orange-500 text-white rounded-lg text-xs font-semibold h-7 px-3'
+                  : 'bg-slate-900 border-white/10 text-slate-300 rounded-lg text-xs h-7 px-3 hover:text-white'
+              }
+            >
+              All Results ({totalAllResults})
+            </Button>
+            <Button
+              variant={activeTab === 'cinema' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('cinema')}
+              className={
+                activeTab === 'cinema'
+                  ? 'bg-orange-500 text-white rounded-lg text-xs font-semibold h-7 px-3'
+                  : 'bg-slate-900 border-white/10 text-slate-300 rounded-lg text-xs h-7 px-3 hover:text-white'
+              }
+            >
+              <Globe className="w-3 h-3 mr-1" /> African Cinema ({geoResults.length})
+            </Button>
+            <Button
+              variant={activeTab === 'movies' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('movies')}
+              className={
+                activeTab === 'movies'
+                  ? 'bg-orange-500 text-white rounded-lg text-xs font-semibold h-7 px-3'
+                  : 'bg-slate-900 border-white/10 text-slate-300 rounded-lg text-xs h-7 px-3 hover:text-white'
+              }
+            >
+              <Film className="w-3 h-3 mr-1" /> Movies ({movieItems.length})
+            </Button>
+            <Button
+              variant={activeTab === 'tv' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('tv')}
+              className={
+                activeTab === 'tv'
+                  ? 'bg-orange-500 text-white rounded-lg text-xs font-semibold h-7 px-3'
+                  : 'bg-slate-900 border-white/10 text-slate-300 rounded-lg text-xs h-7 px-3 hover:text-white'
+              }
+            >
+              <Tv className="w-3 h-3 mr-1" /> Series ({tvItems.length})
+            </Button>
+            {newsResults.length > 0 && (
+              <Button
+                variant={activeTab === 'news' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveTab('news')}
+                className={
+                  activeTab === 'news'
+                    ? 'bg-orange-500 text-white rounded-lg text-xs font-semibold h-7 px-3'
+                    : 'bg-slate-900 border-white/10 text-slate-300 rounded-lg text-xs h-7 px-3 hover:text-white'
+                }
+              >
+                <Newspaper className="w-3 h-3 mr-1" /> News ({newsResults.length})
+              </Button>
+            )}
+            {musicResults.length > 0 && (
+              <Button
+                variant={activeTab === 'music' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveTab('music')}
+                className={
+                  activeTab === 'music'
+                    ? 'bg-orange-500 text-white rounded-lg text-xs font-semibold h-7 px-3'
+                    : 'bg-slate-900 border-white/10 text-slate-300 rounded-lg text-xs h-7 px-3 hover:text-white'
+                }
+              >
+                <Music2 className="w-3 h-3 mr-1" /> Soundtracks ({musicResults.length})
+              </Button>
+            )}
+          </div>
+        )}
 
-        {/* Content Presentation */}
-        {isLoading && isGeoLoading ? (
+        {/* Search Results Presentation */}
+        {isSearching ? (
           <div className="text-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-3" />
-            <p className="text-xs text-slate-400">Searching global catalog...</p>
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-orange-500 border-t-transparent mx-auto mb-3" />
+            <p className="text-xs text-slate-400">Executing hybrid retrieval & multi-signal ranking...</p>
           </div>
         ) : !debouncedQuery.trim() ? (
-          <div className="text-center py-20 bg-gray-900/30 rounded-3xl border border-gray-800">
-            <SearchIcon className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-white">Start searching OrangeFlix</h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
-              Type any movie title, African cinema title, series name, director, news story, or soundtrack album.
+          <div className="text-center py-16 bg-slate-900/30 rounded-3xl border border-white/[.08] p-8 space-y-3 max-w-xl mx-auto">
+            <SearchIcon className="w-10 h-10 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-white">Start searching OrangeFlix</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Search by title, famous characters (e.g. Iron Man, Batman), actors, directors, release years, or natural plot descriptions.
+            </p>
+          </div>
+        ) : totalAllResults === 0 ? (
+          <div className="text-center py-16 bg-slate-900/30 rounded-3xl border border-white/[.08] p-8 space-y-3 max-w-xl mx-auto">
+            <SearchIcon className="w-10 h-10 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-white">No results found</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              We couldn't find any titles matching "{debouncedQuery}". Try checking for spelling errors or searching by another character, actor, or genre.
             </p>
           </div>
         ) : (
-          <div className="space-y-12">
-            {/* Geo Cinema Section */}
-            {(activeTab === 'all' || activeTab === 'cinema') && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-orange-400" />
-                    African & Global Geo Cinema ({geoResults.length})
+          <div className="space-y-10">
+            {/* 1. African Cinema Section */}
+            {(activeTab === 'all' || activeTab === 'cinema') && geoResults.length > 0 && (
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-orange-400" />
+                    African & Regional Cinema ({geoResults.length})
                   </h2>
                   {activeTab === 'all' && geoResults.length > 4 && (
                     <button
@@ -236,50 +312,39 @@ export default function Search() {
                   )}
                 </div>
 
-                {geoResults.length === 0 ? (
-                  activeTab === 'cinema' ? (
-                    <div className="p-8 text-center bg-gray-900/40 rounded-2xl border border-gray-800">
-                      <p className="text-xs text-slate-400">No geo cinema matching "{debouncedQuery}".</p>
-                    </div>
-                  ) : null
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                    {(activeTab === 'cinema' ? geoResults : geoResults.slice(0, 8)).map((movie) => (
-                      <CountryMovieCard
-                        key={movie.id}
-                        movie={movie}
-                        countryCode={movie.country || movie.countryCode || 'RW'}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
+                  {(activeTab === 'cinema' ? geoResults : geoResults.slice(0, 8)).map((movie) => (
+                    <CountryMovieCard
+                      key={movie.id}
+                      movie={movie}
+                      countryCode={movie.country || movie.countryCode || 'RW'}
+                    />
+                  ))}
+                </div>
+              </section>
             )}
 
-            {/* TMDB Movies & Series Grid */}
-            {(activeTab === 'all' || activeTab === 'movies' || activeTab === 'tv') && (
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                  <Film className="w-5 h-5 text-orange-400" />
-                  Movies & Television
+            {/* 2. TMDB Ranked Movies & TV Shows */}
+            {(activeTab === 'all' || activeTab === 'movies' || activeTab === 'tv') && rawItems.length > 0 && (
+              <section className="space-y-4">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Film className="w-4 h-4 text-orange-400" />
+                  {activeTab === 'movies' ? `Movies (${movieItems.length})` : activeTab === 'tv' ? `Series (${tvItems.length})` : `Ranked Titles (${rawItems.length})`}
                 </h2>
-                {rawItems.length === 0 ? (
-                  <p className="text-xs text-slate-500">No films or series matching this query.</p>
-                ) : (
-                  <div className="content-grid">
-                    {(activeTab === 'movies' ? movieItems : activeTab === 'tv' ? tvItems : rawItems).map((item) => (
-                      <MovieCard key={item.id} movie={item} />
-                    ))}
-                  </div>
-                )}
-              </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {(activeTab === 'movies' ? movieItems : activeTab === 'tv' ? tvItems : rawItems).map((item) => (
+                    <MovieCard key={item.id} movie={item} />
+                  ))}
+                </div>
+              </section>
             )}
 
-            {/* News Articles Section */}
+            {/* 3. News Articles */}
             {(activeTab === 'all' || activeTab === 'news') && newsResults.length > 0 && (
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                  <Newspaper className="w-5 h-5 text-orange-400" />
+              <section className="space-y-4">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Newspaper className="w-4 h-4 text-orange-400" />
                   Related News & Industry Stories ({newsResults.length})
                 </h2>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -287,14 +352,14 @@ export default function Search() {
                     <Link
                       key={article.id}
                       to={`/news/${article.slug}`}
-                      className="p-4 rounded-2xl bg-gray-900/60 border border-white/[.08] hover:border-orange-500/30 transition flex flex-col justify-between"
+                      className="p-4 rounded-xl bg-slate-900/60 border border-white/[.08] hover:border-orange-500/30 transition flex flex-col justify-between"
                     >
                       <div>
                         <Badge className="bg-orange-500/20 text-orange-400 text-[10px] mb-2 font-bold">
                           {article.category}
                         </Badge>
-                        <h4 className="font-bold text-white text-sm line-clamp-2">{article.title}</h4>
-                        <p className="text-xs text-slate-400 line-clamp-2 mt-1">{article.summary}</p>
+                        <h4 className="font-bold text-white text-xs line-clamp-2">{article.title}</h4>
+                        <p className="text-[11px] text-slate-400 line-clamp-2 mt-1">{article.summary}</p>
                       </div>
                       <span className="text-[11px] text-orange-400 mt-3 inline-flex items-center gap-1 font-semibold">
                         Read Story <ArrowRight className="w-3 h-3" />
@@ -302,23 +367,23 @@ export default function Search() {
                     </Link>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
 
-            {/* Soundtracks Section */}
+            {/* 4. Soundtracks */}
             {(activeTab === 'all' || activeTab === 'music') && musicResults.length > 0 && (
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                  <Music2 className="w-5 h-5 text-orange-400" />
+              <section className="space-y-4">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Music2 className="w-4 h-4 text-orange-400" />
                   Soundtrack Themes & Audio Tracks ({musicResults.length})
                 </h2>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {musicResults.slice(0, 6).map((track) => (
                     <div
                       key={track.id}
-                      className="p-3 rounded-xl bg-gray-900/60 border border-white/[.08] flex items-center gap-3"
+                      className="p-2.5 rounded-xl bg-slate-900/60 border border-white/[.08] flex items-center gap-3"
                     >
-                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-950 shrink-0">
+                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-950 shrink-0">
                         <img src={track.artworkUrl} alt={track.trackName} className="w-full h-full object-cover" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -328,34 +393,7 @@ export default function Search() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Pagination for Movies/TV */}
-            {(activeTab === 'all' || activeTab === 'movies' || activeTab === 'tv') && rawItems.length > 0 && (
-              <div className="flex items-center justify-center gap-3 pt-6 border-t border-white/[.07]">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1}
-                  className="border-white/10 text-slate-300"
-                >
-                  <ChevronLeft className="w-4 h-4 mr-1" /> Previous
-                </Button>
-                <span className="text-xs font-mono text-slate-400">
-                  {currentPage} / {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="border-white/10 text-slate-300"
-                >
-                  Next <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
-              </div>
+              </section>
             )}
           </div>
         )}

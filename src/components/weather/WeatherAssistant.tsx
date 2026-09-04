@@ -27,7 +27,8 @@ export default function WeatherAssistant() {
   const { currentUser } = useAuth();
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendedItem[]>([]);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true); // Open proactively with list visible
+  const [isVisible, setIsVisible] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [isOptedOut, setIsOptedOut] = useState(false);
 
@@ -46,7 +47,7 @@ export default function WeatherAssistant() {
       // Storage blocked
     }
 
-    // Load weather & recommendations with resilient catch
+    // Load weather & recommendations proactively
     WeatherApi.getWeatherByCity('Kigali')
       .then(async (w) => {
         if (!w) return;
@@ -57,13 +58,16 @@ export default function WeatherAssistant() {
           currentUser?.id,
           3
         ).catch(() => []);
-        
+
         setRecommendations(recs);
         if (recs.length > 0) {
           Analytics.logEvent('weather_recommendation_impression', {
             userId: currentUser?.id,
             metadata: { weatherCondition: w.conditionText, temp: w.temperature },
           });
+          // Smooth entrance delay matching GeoRecommendationCard
+          const timer = setTimeout(() => setIsVisible(true), 1200);
+          return () => clearTimeout(timer);
         }
       })
       .catch(() => {
@@ -71,11 +75,12 @@ export default function WeatherAssistant() {
       });
   }, [currentUser]);
 
-  if (isOptedOut || isDismissed || !weather || recommendations.length === 0) {
+  if (!isVisible || isOptedOut || isDismissed || !weather || recommendations.length === 0) {
     return null;
   }
 
   const handleDismiss = () => {
+    setIsVisible(false);
     setIsDismissed(true);
     try {
       sessionStorage.setItem(SESSION_DISMISS_KEY, 'true');
@@ -85,6 +90,7 @@ export default function WeatherAssistant() {
   };
 
   const handleOptOut = () => {
+    setIsVisible(false);
     setIsOptedOut(true);
     try {
       localStorage.setItem(PREF_OPT_OUT_KEY, 'true');
@@ -104,11 +110,11 @@ export default function WeatherAssistant() {
 
   return (
     <aside
-      className="fixed bottom-20 right-4 z-40 max-w-sm w-[calc(100vw-2rem)] sm:w-80 animate-fade-in"
+      className="fixed bottom-6 left-6 z-40 max-w-sm w-[calc(100vw-2rem)] sm:w-80 animate-in fade-in slide-in-from-bottom-6 duration-500"
       aria-label="Weather-aware entertainment assistant"
     >
       {isOpen ? (
-        <div className="rounded-2xl border border-white/10 bg-[#090e18]/95 p-4 shadow-2xl backdrop-blur-xl space-y-3">
+        <div className="rounded-2xl border border-white/15 bg-[#090e18]/95 p-4 shadow-2xl backdrop-blur-2xl space-y-3 ring-1 ring-orange-500/20">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/[.08] pb-2.5">
             <div className="flex items-center gap-2">
@@ -121,7 +127,7 @@ export default function WeatherAssistant() {
                   <span className="text-slate-400">• {weather.city}</span>
                 </p>
                 <p className="text-[10px] text-orange-400 font-medium">
-                  {weather.moodTitle || weather.moodCategory || 'Prime'} Picks
+                  {weather.moodTitle || weather.moodCategory || 'Prime'} Picks for Tonight
                 </p>
               </div>
             </div>
@@ -129,15 +135,17 @@ export default function WeatherAssistant() {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setIsOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-md"
+                className="text-slate-400 hover:text-white p-1 rounded-md transition"
                 aria-label="Minimize weather assistant"
+                title="Minimize"
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
               <button
                 onClick={handleDismiss}
-                className="text-slate-400 hover:text-white p-1 rounded-md"
+                className="text-slate-400 hover:text-white p-1 rounded-md transition"
                 aria-label="Dismiss assistant for this session"
+                title="Dismiss"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -145,12 +153,12 @@ export default function WeatherAssistant() {
           </div>
 
           <p className="text-[11px] text-slate-400 leading-snug">
-            Atmospheric recommendations tailored to your taste & {(weather.conditionText || 'clear').toLowerCase()} skies.
+            Curated atmospheric cinema matching current {(weather.conditionText || 'clear').toLowerCase()} weather in {weather.city}:
           </p>
 
-          {/* Recommendation List */}
+          {/* Proactive Recommendation List - Directly Rendered */}
           <div className="space-y-2">
-            {recommendations.map((item) => (
+            {recommendations.slice(0, 3).map((item) => (
               <div
                 key={item.id}
                 className="flex items-center justify-between gap-3 p-2 rounded-xl bg-white/[.03] border border-white/[.06] hover:border-orange-500/30 transition group"
@@ -168,7 +176,7 @@ export default function WeatherAssistant() {
                   <p className="text-[10px] text-slate-400 truncate">
                     {item.genres[0] || 'Movie'} • ★ {item.voteAverage}
                   </p>
-                  <Badge className="bg-orange-500/20 text-orange-300 border-orange-500/30 text-[9px] px-1.5 py-0 mt-0.5">
+                  <Badge className="bg-orange-500/20 text-orange-300 border-orange-500/30 text-[9px] px-1.5 py-0 mt-0.5 font-normal">
                     {item.primaryReason}
                   </Badge>
                 </div>
@@ -202,14 +210,14 @@ export default function WeatherAssistant() {
           </div>
         </div>
       ) : (
-        /* Compact Floating Pill */
+        /* Compact Minimized Floating Pill */
         <button
           onClick={() => setIsOpen(true)}
-          className="ml-auto flex items-center gap-2.5 rounded-full border border-orange-500/30 bg-[#0a101c]/95 px-3.5 py-2 shadow-2xl backdrop-blur-xl hover:border-orange-400 transition group"
+          className="flex items-center gap-2.5 rounded-full border border-orange-500/30 bg-[#0a101c]/95 px-3.5 py-2 shadow-2xl backdrop-blur-xl hover:border-orange-400 transition group"
         >
           {getWeatherIcon(weather.conditionText || weather.condition)}
           <span className="text-xs font-semibold text-white">
-            {weather.temperature}°C • <span className="text-orange-400">{weather.city}</span> picks
+            {weather.temperature}°C • <span className="text-orange-400">{weather.city}</span> picks ({recommendations.length})
           </span>
           <Sparkles className="w-3.5 h-3.5 text-orange-400 group-hover:scale-110 transition-transform" />
         </button>

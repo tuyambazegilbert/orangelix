@@ -32,6 +32,10 @@ import { useOfflineDownloads } from '@/hooks/use-offline-downloads';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { PROFILE_FALLBACK, POSTER_FALLBACK, BACKDROP_FALLBACK } from '@/lib/tmdb/images';
+import { DetailHeroSkeleton } from '@/components/ui/Skeletons';
+import { toGenreSlug } from '@/lib/utils';
+import MediaReviewsSection from '@/components/reviews/MediaReviewsSection';
+import { WhereToWatchProviders } from '@/components/watch/WhereToWatchProviders';
 
 export default function MovieDetail() {
   const { id } = useParams<{ id: string }>();
@@ -95,42 +99,52 @@ export default function MovieDetail() {
     };
   }, [movie]);
 
-  const handleToggleFavorite = () => {
-    if (!movie) return;
-    const rawId = `movie-${movie.tmdbId}`;
-    if (MovieService.isFavorite(rawId, currentUser?.id)) {
-      MovieService.removeFromFavorites(rawId, currentUser?.id);
-      if (currentUser) void FirebaseData.removeFavorites(currentUser.id, rawId);
-      Analytics.logEvent('favorite_remove', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
-      toast.success('Removed from Favorites');
+  const rawId = movieId ? `movie-${movieId}` : '';
+  const isFav = currentUser && rawId ? MovieService.isFavorite(rawId, currentUser.id) : false;
+  const isInLater = currentUser && rawId ? MovieService.isInWatchLater(rawId, currentUser.id) : false;
+
+  const toggleFavorite = () => {
+    if (!currentUser || !movie) {
+      toast.error('Please login to add favorites');
+      return;
+    }
+
+    if (isFav) {
+      MovieService.removeFromFavorites(rawId, currentUser.id);
+      void FirebaseData.removeFavorites(currentUser.id, rawId);
+      Analytics.logEvent('favorite_remove', { userId: currentUser.id, entityId: rawId, entityTitle: movie.title });
+      toast.success('Removed from favorites');
     } else {
-      MovieService.addToFavorites(rawId, currentUser?.id, {
+      MovieService.addToFavorites(rawId, currentUser.id, {
         tmdbId: movie.tmdbId,
         mediaType: 'movie',
         cachedMedia: movie,
       });
-      if (currentUser) void FirebaseData.setFavorites(currentUser.id, movie);
-      Analytics.logEvent('favorite_add', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
-      toast.success('Added to Favorites');
+      void FirebaseData.setFavorites(currentUser.id, movie);
+      Analytics.logEvent('favorite_add', { userId: currentUser.id, entityId: rawId, entityTitle: movie.title });
+      toast.success('Added to favorites');
     }
   };
 
-  const handleToggleWatchlist = () => {
-    if (!movie) return;
-    const rawId = `movie-${movie.tmdbId}`;
-    if (MovieService.isInWatchLater(rawId, currentUser?.id)) {
-      MovieService.removeFromWatchLater(rawId, currentUser?.id);
-      if (currentUser) void FirebaseData.removeWatchlist(currentUser.id, rawId);
-      Analytics.logEvent('watchlater_remove', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
+  const toggleWatchLater = () => {
+    if (!currentUser || !movie) {
+      toast.error('Please login to add to watch later');
+      return;
+    }
+
+    if (isInLater) {
+      MovieService.removeFromWatchLater(rawId, currentUser.id);
+      void FirebaseData.removeWatchlist(currentUser.id, rawId);
+      Analytics.logEvent('watchlater_remove', { userId: currentUser.id, entityId: rawId, entityTitle: movie.title });
       toast.success('Removed from Watch Later');
     } else {
-      MovieService.addToWatchLater(rawId, currentUser?.id, {
+      MovieService.addToWatchLater(rawId, currentUser.id, {
         tmdbId: movie.tmdbId,
         mediaType: 'movie',
         cachedMedia: movie,
       });
-      if (currentUser) void FirebaseData.setWatchlist(currentUser.id, movie);
-      Analytics.logEvent('watchlater_add', { userId: currentUser?.id, entityId: rawId, entityTitle: movie.title });
+      void FirebaseData.setWatchlist(currentUser.id, movie);
+      Analytics.logEvent('watchlater_add', { userId: currentUser.id, entityId: rawId, entityTitle: movie.title });
       toast.success('Added to Watch Later');
     }
   };
@@ -402,6 +416,13 @@ export default function MovieDetail() {
           <p className="text-gray-300 text-base leading-relaxed max-w-4xl">{movie.description}</p>
         </div>
 
+        {/* Where to Watch Full Movie (TMDB & JustWatch Providers) */}
+        <WhereToWatchProviders
+          mediaType="movie"
+          tmdbId={movie.tmdbId}
+          title={movie.title}
+        />
+
         {/* Cast Section */}
         {movie.cast && movie.cast.length > 0 && (
           <div className="space-y-6">
@@ -450,6 +471,16 @@ export default function MovieDetail() {
         <RelatedNews
           news={relations.news}
           isLoading={isLoadingRelations}
+        />
+
+        {/* TMDB & Community Reviews Section */}
+        <MediaReviewsSection
+          mediaType="movie"
+          tmdbId={movie.tmdbId}
+          mediaTitle={movie.title}
+          voteAverage={movie.voteAverage}
+          voteCount={movie.voteCount}
+          rawId={rawId}
         />
 
         {/* Similar Movies */}

@@ -59,16 +59,26 @@ export default function RelatedNews({ news, isLoading }: RelatedNewsProps) {
               to={`/news/${item.slug}`}
               className="group block"
             >
-              <Card className="h-full bg-gray-900/60 border-gray-800 hover:border-orange-500/40 transition-all overflow-hidden flex flex-col justify-between">
-                <div className="relative h-32 w-full overflow-hidden bg-gray-950">
+              <Card className="h-full bg-gray-900/60 border-gray-800 hover:border-orange-500/40 transition-all overflow-hidden flex flex-col justify-between shadow-md">
+                <div className="relative h-36 w-full overflow-hidden bg-gray-950">
                   <img
-                    src={item.imageUrl}
+                    src={item.imageUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800'}
                     alt={item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800';
+                    }}
                   />
-                  <Badge className="absolute top-2 left-2 bg-black/70 backdrop-blur-md text-[10px] text-orange-400 border border-white/10">
-                    {item.category}
-                  </Badge>
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 flex-wrap">
+                    <Badge className="bg-black/80 backdrop-blur-md text-[10px] text-orange-400 border border-white/10 font-medium">
+                      {item.category}
+                    </Badge>
+                    {item.source && (
+                      <Badge variant="outline" className="bg-black/60 backdrop-blur-md text-[9px] text-slate-300 border-white/10">
+                        {item.source}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
 
                 <CardContent className="p-4 flex-1 flex flex-col justify-between space-y-2">
@@ -89,8 +99,9 @@ export default function RelatedNews({ news, isLoading }: RelatedNewsProps) {
                     </p>
                   </div>
 
-                  <div className="pt-2 flex items-center text-[11px] text-orange-400 font-semibold group-hover:translate-x-1 transition-transform">
-                    Read Story <ArrowRight className="w-3 h-3 ml-1" />
+                  <div className="pt-2 flex items-center justify-between text-[11px] text-orange-400 font-semibold group-hover:translate-x-0.5 transition-transform border-t border-white/[0.04]">
+                    <span>Read Story</span>
+                    <ArrowRight className="w-3 h-3" />
                   </div>
                 </CardContent>
               </Card>
